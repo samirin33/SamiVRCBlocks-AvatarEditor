@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEditor;
 using UnityEditor.Animations;
 using Samirin33.Editor;
+using Samirin33.AvatarEditor.Tools.Editor;
 
 namespace Samirin33.AvatarEditor.Animation.Editor
 {
@@ -174,44 +175,84 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             for (int i = 0; i < stream.length; i++)
             {
                 var kind = stream.GetEventType(i);
-                if (kind != ObjectChangeKind.CreateAssetObject)
+
+                if (kind == ObjectChangeKind.CreateAssetObject)
+                {
+                    stream.GetCreateAssetObjectEvent(i, out var args);
+                    var obj = EditorUtility.InstanceIDToObject(args.instanceId);
+                    var instanceId = args.instanceId;
+
+                    if (obj is AnimatorState)
+                    {
+                        EditorApplication.delayCall += () =>
+                        {
+                            var state = EditorUtility.InstanceIDToObject(instanceId) as AnimatorState;
+                            ApplyDefaultsToState(state);
+                        };
+                    }
+                    else if (obj is AnimatorStateTransition)
+                    {
+                        // エディタの「Make Transition」等で付く Unity 初期値はバージョンにより異なり、
+                        // ShouldApplyDefaultsToTransition だけでは検知できないことがある。新規サブアセット作成なので prefs をそのまま適用する。
+                        EditorApplication.delayCall += () =>
+                        {
+                            var tr = EditorUtility.InstanceIDToObject(instanceId) as AnimatorStateTransition;
+                            ApplyDefaultsToTransition(tr, requireFreshUnityDefaults: false);
+                        };
+                    }
+                    else if (obj is AnimatorStateMachine)
+                    {
+                        EditorApplication.delayCall += () =>
+                        {
+                            var sm = EditorUtility.InstanceIDToObject(instanceId) as AnimatorStateMachine;
+                            ApplyDefaultsToNewLayer(sm);
+                        };
+                    }
+
                     continue;
-
-                stream.GetCreateAssetObjectEvent(i, out var args);
-                var obj = EditorUtility.InstanceIDToObject(args.instanceId);
-                var instanceId = args.instanceId;
-
-                if (obj is AnimatorState)
-                {
-                    EditorApplication.delayCall += () =>
-                    {
-                        var state = EditorUtility.InstanceIDToObject(instanceId) as AnimatorState;
-                        ApplyDefaultsToState(state);
-                    };
                 }
-                else if (obj is AnimatorStateTransition)
+
+                // 「Make Transition」等でサブアセットの Create が報告されず、プロパティ変更のみ流れる場合がある。
+                if (kind == ObjectChangeKind.ChangeAssetObjectProperties)
                 {
-                    EditorApplication.delayCall += () =>
+                    stream.GetChangeAssetObjectPropertiesEvent(i, out var changeArgs);
+                    var instanceId = changeArgs.instanceId;
+                    var obj = EditorUtility.InstanceIDToObject(instanceId);
+                    if (obj is AnimatorStateTransition)
                     {
-                        var tr = EditorUtility.InstanceIDToObject(instanceId) as AnimatorStateTransition;
-                        ApplyDefaultsToTransition(tr);
-                    };
-                }
-                else if (obj is AnimatorStateMachine)
-                {
-                    EditorApplication.delayCall += () =>
-                    {
-                        var sm = EditorUtility.InstanceIDToObject(instanceId) as AnimatorStateMachine;
-                        ApplyDefaultsToNewLayer(sm);
-                    };
+                        EditorApplication.delayCall += () =>
+                        {
+                            var tr = EditorUtility.InstanceIDToObject(instanceId) as AnimatorStateTransition;
+                            ApplyDefaultsToTransition(tr, requireFreshUnityDefaults: true);
+                        };
+                    }
                 }
             }
         }
 #endif
 
-        private static void ApplyDefaultsToState(AnimatorState state)
+        /// <summary>
+        /// <see cref="AnimatorBinding"/> 等、API でステートを作成した直後に呼び出す。
+        /// Unity エディタの「新規直後」判定をスキップし、<see cref="Enabled"/> が true なら prefs を適用する。
+        /// </summary>
+        public static void ApplyDefaultsToStateFromScript(AnimatorState state)
         {
+            ApplyDefaultsToState(state, requireFreshUnityDefaults: false);
+        }
+
+        /// <summary>
+        /// <see cref="AnimatorBinding"/> 等、API で遷移を作成した直後に呼び出す。
+        /// </summary>
+        public static void ApplyDefaultsToTransitionFromScript(AnimatorStateTransition transition)
+        {
+            ApplyDefaultsToTransition(transition, requireFreshUnityDefaults: false);
+        }
+
+        private static void ApplyDefaultsToState(AnimatorState state, bool requireFreshUnityDefaults = true)
+        {
+            if (!Enabled) return;
             if (state == null) return;
+            if (requireFreshUnityDefaults && !ShouldApplyDefaultsToState(state)) return;
 
             Undo.RecordObject(state, "Animator Default Setting");
             var defaultMotion = StateDefaultMotion;
@@ -232,6 +273,19 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             state.mirror = Mirror;
             state.speed = Speed;
             EditorUtility.SetDirty(state);
+        }
+
+        /// <summary>
+        /// スクリプトで作成・設定済みのステートは上書きしない。
+        /// Unity の新規作成直後に近い値の場合のみデフォルト設定を適用する。
+        /// </summary>
+        private static bool ShouldApplyDefaultsToState(AnimatorState state)
+        {
+            if (state.motion != null) return false;
+            if (state.writeDefaultValues != true) return false;
+            if (state.mirror != false) return false;
+            if (!Mathf.Approximately(state.speed, 1f)) return false;
+            return true;
         }
 
         /// <summary>ステートが属する直接の親ステートマシン（同レイヤー内のSubStateは別扱い）を取得</summary>
@@ -307,9 +361,11 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             return baseName + separator + next;
         }
 
-        private static void ApplyDefaultsToTransition(AnimatorStateTransition transition)
+        private static void ApplyDefaultsToTransition(AnimatorStateTransition transition, bool requireFreshUnityDefaults = true)
         {
+            if (!Enabled) return;
             if (transition == null) return;
+            if (requireFreshUnityDefaults && !ShouldApplyDefaultsToTransition(transition)) return;
 
             Undo.RecordObject(transition, "Animator Default Setting (Transition)");
             transition.duration = TransitionDuration;
@@ -317,22 +373,40 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             transition.hasExitTime = TransitionHasExitTime;
             transition.exitTime = TransitionExitTime;
             transition.offset = TransitionOffset;
-            if (IsAnyStateTransition(transition))
+            if (AnimatorTransitionEditOperations.IsAnyStateTransition(transition))
                 transition.canTransitionToSelf = TransitionCanTransitionToSelf;
             EditorUtility.SetDirty(transition);
         }
 
-        private static bool IsAnyStateTransition(AnimatorStateTransition transition)
+        /// <summary>
+        /// スクリプトで値を設定済みの遷移は上書きしない。
+        /// Unity の新規作成直後に近い値の場合のみデフォルト設定を適用する。
+        /// </summary>
+        private static bool ShouldApplyDefaultsToTransition(AnimatorStateTransition transition)
         {
-            var path = AssetDatabase.GetAssetPath(transition);
-            if (string.IsNullOrEmpty(path)) return false;
-            var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(path);
-            if (controller == null) return false;
-            foreach (var layer in controller.layers)
-            {
-                foreach (var t in layer.stateMachine.anyStateTransitions)
-                    if (t == transition) return true;
-            }
+            if (transition == null) return false;
+            if (transition.hasFixedDuration != true) return false;
+            if (!Mathf.Approximately(transition.offset, 0f)) return false;
+
+            // Unity の「新規トランジション」初期値はバージョン・作成経路（右クリック Make Transition 等）で異なる。
+            // いずれかに一致するときだけ「まだユーザーが触っていない」とみなす。
+
+            // 典型: Blend 0.25s, Exit Time 0.75, Has Exit Time
+            if (Mathf.Approximately(transition.duration, 0.25f) &&
+                transition.hasExitTime &&
+                Mathf.Approximately(transition.exitTime, 0.75f))
+                return true;
+
+            // ブレンド無し・Exit Time オフ（Unity 6 系などで見られる）
+            if (Mathf.Approximately(transition.duration, 0f) && !transition.hasExitTime)
+                return true;
+
+            // 短いクロスフェード例（環境により 0.1 / Exit Time 付き）
+            if (Mathf.Approximately(transition.duration, 0.1f) &&
+                transition.hasExitTime &&
+                Mathf.Approximately(transition.exitTime, 0.75f))
+                return true;
+
             return false;
         }
 
@@ -368,6 +442,8 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                     }
                     return;
                 }
+                if (!Mathf.Approximately(layers[i].defaultWeight, 0f))
+                    return;
                 layers[i].defaultWeight = LayerDefaultWeight;
                 modified = true;
                 controller.layers = layers;
