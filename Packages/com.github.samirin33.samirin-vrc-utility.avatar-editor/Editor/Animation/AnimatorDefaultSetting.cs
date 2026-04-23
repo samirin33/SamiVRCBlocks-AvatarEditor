@@ -43,6 +43,8 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         private const bool DefaultStateNameNumberingEnabled = true;
         private const string DefaultStateNameNumberingSeparator = " ";
         private const string ProxyEmptyAnimPath = "Packages/com.vrchat.avatars/Samples/AV3 Demo Assets/Animation/ProxyAnim/proxy_empty.anim";
+        private static readonly HashSet<int> ScriptAppliedStateInstanceIds = new HashSet<int>();
+        private static readonly HashSet<int> ScriptAppliedTransitionInstanceIds = new HashSet<int>();
 
         public static bool Enabled
         {
@@ -186,6 +188,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                     {
                         EditorApplication.delayCall += () =>
                         {
+                            if (ConsumeSuppressedInstanceId(ScriptAppliedStateInstanceIds, instanceId)) return;
                             var state = EditorUtility.InstanceIDToObject(instanceId) as AnimatorState;
                             ApplyDefaultsToState(state);
                         };
@@ -196,6 +199,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                         // ShouldApplyDefaultsToTransition だけでは検知できないことがある。新規サブアセット作成なので prefs をそのまま適用する。
                         EditorApplication.delayCall += () =>
                         {
+                            if (ConsumeSuppressedInstanceId(ScriptAppliedTransitionInstanceIds, instanceId)) return;
                             var tr = EditorUtility.InstanceIDToObject(instanceId) as AnimatorStateTransition;
                             ApplyDefaultsToTransition(tr, requireFreshUnityDefaults: false);
                         };
@@ -222,6 +226,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                     {
                         EditorApplication.delayCall += () =>
                         {
+                            if (ConsumeSuppressedInstanceId(ScriptAppliedTransitionInstanceIds, instanceId)) return;
                             var tr = EditorUtility.InstanceIDToObject(instanceId) as AnimatorStateTransition;
                             ApplyDefaultsToTransition(tr, requireFreshUnityDefaults: true);
                         };
@@ -237,6 +242,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         /// </summary>
         public static void ApplyDefaultsToStateFromScript(AnimatorState state)
         {
+            SuppressNextEventAutoApply(ScriptAppliedStateInstanceIds, state);
             ApplyDefaultsToState(state, requireFreshUnityDefaults: false);
         }
 
@@ -245,7 +251,19 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         /// </summary>
         public static void ApplyDefaultsToTransitionFromScript(AnimatorStateTransition transition)
         {
+            SuppressNextEventAutoApply(ScriptAppliedTransitionInstanceIds, transition);
             ApplyDefaultsToTransition(transition, requireFreshUnityDefaults: false);
+        }
+
+        private static void SuppressNextEventAutoApply<T>(HashSet<int> suppressedIds, T obj) where T : UnityEngine.Object
+        {
+            if (obj == null) return;
+            suppressedIds.Add(obj.GetInstanceID());
+        }
+
+        private static bool ConsumeSuppressedInstanceId(HashSet<int> suppressedIds, int instanceId)
+        {
+            return suppressedIds.Remove(instanceId);
         }
 
         private static void ApplyDefaultsToState(AnimatorState state, bool requireFreshUnityDefaults = true)
@@ -281,7 +299,8 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         /// </summary>
         private static bool ShouldApplyDefaultsToState(AnimatorState state)
         {
-            if (state.motion != null) return false;
+            // D&D で AnimationClip から State を作ると、作成直後から motion が設定済みになる。
+            // ここで motion の有無を条件にすると「新規 State」でも適用がスキップされるため判定に使わない。
             if (state.writeDefaultValues != true) return false;
             if (state.mirror != false) return false;
             if (!Mathf.Approximately(state.speed, 1f)) return false;
