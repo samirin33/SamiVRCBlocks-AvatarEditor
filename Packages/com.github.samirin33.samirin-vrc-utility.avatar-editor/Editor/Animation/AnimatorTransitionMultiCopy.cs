@@ -12,12 +12,25 @@ namespace Samirin33.AvatarEditor.Tools.Editor
     /// Unity 2022.3 ではタイミング系は <see cref="AnimatorStateTransition"/> のみ（Any State 遷移も同型）。
     /// <see cref="AnimatorTransition"/>（Entry 等）は条件のみが API 上取り扱える。
     /// <list type="bullet">
-    /// <item>グラフ上でトランジションを選択したうえで <c>samirin33 Editor Tools/Animator/</c> から実行可能。</item>
+    /// <item>グラフ上でトランジションを選択したうえで <c>samirin33 Editor Tools/Animator Binding/</c> から実行可能。</item>
     /// <item>インスペクター等でトランジションを右クリックしたときの CONTEXT メニューにも項目を追加。</item>
     /// </list>
     /// </summary>
     public static class AnimatorTransitionMultiCopy
     {
+        // CONTEXT/AnimatorStateTransition/…（ショートカット表記の同期用・MenuItem パスと一致させる）
+        private const string MenuContextStateCopy = "CONTEXT/AnimatorStateTransition/トランジション設定をまとめてコピー";
+        private const string MenuContextStatePasteOverwrite = "CONTEXT/AnimatorStateTransition/トランジション設定をまとめて上書きペースト";
+        private const string MenuContextStatePasteAdditive = "CONTEXT/AnimatorStateTransition/トランジション設定をまとめて追加ペースト";
+        // CONTEXT/AnimatorTransition/…
+        private const string MenuContextEntryCopy = "CONTEXT/AnimatorTransition/トランジション設定をまとめてコピー";
+        private const string MenuContextEntryPasteOverwrite = "CONTEXT/AnimatorTransition/トランジション設定をまとめて上書きペースト";
+        private const string MenuContextEntryPasteAdditive = "CONTEXT/AnimatorTransition/トランジション設定をまとめて追加ペースト";
+        // samirin33 Editor Tools/Animator Binding/…
+        private const string MenuToolsCopy = "samirin33 Editor Tools/Animator Binding/トランジション設定をまとめてコピー";
+        private const string MenuToolsPasteOverwrite = "samirin33 Editor Tools/Animator Binding/トランジション設定をまとめて上書きペースト";
+        private const string MenuToolsPasteAdditive = "samirin33 Editor Tools/Animator Binding/トランジション設定をまとめて追加ペースト";
+
         private const string EditorPrefsKey = "SamirinEditorTools.AnimatorTransitionMultiCopy.Json";
 
         private static string ClipboardJson
@@ -169,79 +182,104 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             return HasClipboard && GetOrderedSelection(command, filter).Count > 0;
         }
 
+        [InitializeOnLoadMethod]
+        private static void InitializeMenuHotkeyDisplay()
+        {
+            SyncMenuHotkeyDisplayFromShortcutSettings();
+        }
+
+        private static void SyncMenuHotkeyDisplayFromShortcutSettings()
+        {
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuContextStateCopy, AnimatorBinding.ShortcutIds.MergedCopy);
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuContextStatePasteOverwrite, AnimatorBinding.ShortcutIds.MergedPasteOverwrite);
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuContextStatePasteAdditive, AnimatorBinding.ShortcutIds.MergedPasteAdditive);
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuContextEntryCopy, AnimatorBinding.ShortcutIds.MergedCopy);
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuContextEntryPasteOverwrite, AnimatorBinding.ShortcutIds.MergedPasteOverwrite);
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuContextEntryPasteAdditive, AnimatorBinding.ShortcutIds.MergedPasteAdditive);
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuToolsCopy, AnimatorBinding.ShortcutIds.MergedCopy);
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuToolsPasteOverwrite, AnimatorBinding.ShortcutIds.MergedPasteOverwrite);
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuToolsPasteAdditive, AnimatorBinding.ShortcutIds.MergedPasteAdditive);
+        }
+
         // --- AnimatorStateTransition（ステート間・Any State 含む） ---
 
-        [MenuItem("CONTEXT/AnimatorStateTransition/トランジション設定をまとめてコピー", false, 400)]
+        [MenuItem(MenuContextStateCopy, false, 400)]
         private static void CopyStateTransitions(MenuCommand command)
         {
             CopyFromSelection(command, o => o is AnimatorStateTransition);
         }
 
-        [MenuItem("CONTEXT/AnimatorStateTransition/トランジション設定をまとめてコピー", true)]
+        [MenuItem(MenuContextStateCopy, true)]
         private static bool CopyStateTransitionsValidate(MenuCommand command)
         {
+            SyncMenuHotkeyDisplayFromShortcutSettings();
             return GetOrderedSelection(command, o => o is AnimatorStateTransition).Count > 0;
         }
 
-        [MenuItem("CONTEXT/AnimatorStateTransition/トランジション設定をまとめて上書きペースト", false, 401)]
+        [MenuItem(MenuContextStatePasteOverwrite, false, 401)]
         private static void PasteStateTransitionsOverwrite(MenuCommand command)
         {
             PasteToSelection(command, o => o is AnimatorStateTransition, PasteMode.Overwrite);
         }
 
-        [MenuItem("CONTEXT/AnimatorStateTransition/トランジション設定をまとめて上書きペースト", true)]
+        [MenuItem(MenuContextStatePasteOverwrite, true)]
         private static bool PasteStateTransitionsOverwriteValidate(MenuCommand command)
         {
+            SyncMenuHotkeyDisplayFromShortcutSettings();
             return ValidatePaste(command, o => o is AnimatorStateTransition);
         }
 
-        [MenuItem("CONTEXT/AnimatorStateTransition/トランジション設定をまとめて追加ペースト", false, 402)]
+        [MenuItem(MenuContextStatePasteAdditive, false, 402)]
         private static void PasteStateTransitionsAdditive(MenuCommand command)
         {
             PasteToSelection(command, o => o is AnimatorStateTransition, PasteMode.Additive);
         }
 
-        [MenuItem("CONTEXT/AnimatorStateTransition/トランジション設定をまとめて追加ペースト", true)]
+        [MenuItem(MenuContextStatePasteAdditive, true)]
         private static bool PasteStateTransitionsAdditiveValidate(MenuCommand command)
         {
+            SyncMenuHotkeyDisplayFromShortcutSettings();
             return ValidatePaste(command, o => o is AnimatorStateTransition);
         }
 
         // --- AnimatorTransition（Entry 等・タイミング API なし） ---
 
-        [MenuItem("CONTEXT/AnimatorTransition/トランジション設定をまとめてコピー", false, 400)]
+        [MenuItem(MenuContextEntryCopy, false, 400)]
         private static void CopyAnimatorTransitions(MenuCommand command)
         {
             CopyFromSelection(command, IsEntryTransition);
         }
 
-        [MenuItem("CONTEXT/AnimatorTransition/トランジション設定をまとめてコピー", true)]
+        [MenuItem(MenuContextEntryCopy, true)]
         private static bool CopyAnimatorTransitionsValidate(MenuCommand command)
         {
+            SyncMenuHotkeyDisplayFromShortcutSettings();
             return GetOrderedSelection(command, IsEntryTransition).Count > 0;
         }
 
-        [MenuItem("CONTEXT/AnimatorTransition/トランジション設定をまとめて上書きペースト", false, 401)]
+        [MenuItem(MenuContextEntryPasteOverwrite, false, 401)]
         private static void PasteAnimatorTransitionsOverwrite(MenuCommand command)
         {
             PasteToSelection(command, IsEntryTransition, PasteMode.Overwrite);
         }
 
-        [MenuItem("CONTEXT/AnimatorTransition/トランジション設定をまとめて上書きペースト", true)]
+        [MenuItem(MenuContextEntryPasteOverwrite, true)]
         private static bool PasteAnimatorTransitionsOverwriteValidate(MenuCommand command)
         {
+            SyncMenuHotkeyDisplayFromShortcutSettings();
             return ValidatePaste(command, IsEntryTransition);
         }
 
-        [MenuItem("CONTEXT/AnimatorTransition/トランジション設定をまとめて追加ペースト", false, 402)]
+        [MenuItem(MenuContextEntryPasteAdditive, false, 402)]
         private static void PasteAnimatorTransitionsAdditive(MenuCommand command)
         {
             PasteToSelection(command, IsEntryTransition, PasteMode.Additive);
         }
 
-        [MenuItem("CONTEXT/AnimatorTransition/トランジション設定をまとめて追加ペースト", true)]
+        [MenuItem(MenuContextEntryPasteAdditive, true)]
         private static bool PasteAnimatorTransitionsAdditiveValidate(MenuCommand command)
         {
+            SyncMenuHotkeyDisplayFromShortcutSettings();
             return ValidatePaste(command, IsEntryTransition);
         }
 
@@ -249,39 +287,42 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
         private static bool IsAnyKnownTransition(Object o) => o is AnimatorTransitionBase;
 
-        [MenuItem("samirin33 Editor Tools/Animator/トランジション設定をまとめてコピー", false, 106)]
+        [MenuItem(MenuToolsCopy, false, 106)]
         private static void ToolsMenuCopy()
         {
             CopyFromSelection(null, IsAnyKnownTransition);
         }
 
-        [MenuItem("samirin33 Editor Tools/Animator/トランジション設定をまとめてコピー", true)]
+        [MenuItem(MenuToolsCopy, true)]
         private static bool ToolsMenuCopyValidate()
         {
+            SyncMenuHotkeyDisplayFromShortcutSettings();
             return GetOrderedSelection(null, IsAnyKnownTransition).Count > 0;
         }
 
-        [MenuItem("samirin33 Editor Tools/Animator/トランジション設定をまとめて上書きペースト", false, 107)]
+        [MenuItem(MenuToolsPasteOverwrite, false, 107)]
         private static void ToolsMenuPasteOverwrite()
         {
             PasteToSelection(null, IsAnyKnownTransition, PasteMode.Overwrite);
         }
 
-        [MenuItem("samirin33 Editor Tools/Animator/トランジション設定をまとめて上書きペースト", true)]
+        [MenuItem(MenuToolsPasteOverwrite, true)]
         private static bool ToolsMenuPasteOverwriteValidate()
         {
+            SyncMenuHotkeyDisplayFromShortcutSettings();
             return ValidatePaste(null, IsAnyKnownTransition);
         }
 
-        [MenuItem("samirin33 Editor Tools/Animator/トランジション設定をまとめて追加ペースト", false, 108)]
+        [MenuItem(MenuToolsPasteAdditive, false, 108)]
         private static void ToolsMenuPasteAdditive()
         {
             PasteToSelection(null, IsAnyKnownTransition, PasteMode.Additive);
         }
 
-        [MenuItem("samirin33 Editor Tools/Animator/トランジション設定をまとめて追加ペースト", true)]
+        [MenuItem(MenuToolsPasteAdditive, true)]
         private static bool ToolsMenuPasteAdditiveValidate()
         {
+            SyncMenuHotkeyDisplayFromShortcutSettings();
             return ValidatePaste(null, IsAnyKnownTransition);
         }
 

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -8,9 +7,12 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 {
     public class VRCAvatarParamSetterEditor : EditorWindow
     {
+        const string VRChatReferenceUrl = "https://creators.vrchat.com/avatars/animator-parameters/";
+        const string VrcftReferenceUrl = "https://docs.vrcft.io/docs/tutorial-avatars/tutorial-avatars-extras/parameters";
         RuntimeAnimatorController _animatorController;
-        static bool _showParamDescriptions;
+        static bool _showParamDescriptions = true;
         static Vector2 _paramDescriptionScroll;
+        static bool _showFavoritesOnly;
 
         [MenuItem("samirin33 Editor Tools/VRChat Avatar Param Setter")]
         public static void Open()
@@ -24,6 +26,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             SamirinEditorStyleHelper.DrawWithBlueBackground(() =>
             {
                 EditorGUILayout.Space(4);
+                DrawReferenceLinks();
                 _animatorController = (RuntimeAnimatorController)EditorGUILayout.ObjectField(
                     "Animator Controller",
                     _animatorController,
@@ -35,10 +38,11 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                 // ビルトインパラメータの説明は Animator が未設定でも表示する
                 DrawParamDescriptionSection();
 
+                DrawFavoriteFilter();
+
                 if (_animatorController == null)
                 {
                     EditorGUILayout.HelpBox("Animator Controller を指定してください。", MessageType.Info);
-                    DrawPreferencesLink();
                     return;
                 }
 
@@ -46,17 +50,26 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                 if (controller == null)
                 {
                     EditorGUILayout.HelpBox("Animator Controller アセット（.controller）を指定してください。", MessageType.Warning);
-                    DrawPreferencesLink();
                     return;
                 }
-
-                if (GUILayout.Button("不足している VRChat パラメータを一括追加"))
-                {
-                    AddMissingParameters(controller);
-                }
-
-                DrawPreferencesLink();
             });
+        }
+
+        void DrawReferenceLinks()
+        {
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("VRChat Parameters", GUILayout.Height(22)))
+                Application.OpenURL(VRChatReferenceUrl);
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(4);
+        }
+
+        void DrawFavoriteFilter()
+        {
+            EditorGUILayout.BeginHorizontal();
+            _showFavoritesOnly = GUILayout.Toggle(_showFavoritesOnly, "お気に入りのみ表示", "Button", GUILayout.Height(22));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(4);
         }
 
         void DrawParamDescriptionSection()
@@ -71,10 +84,20 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
                 foreach (var p in VRChatBuiltInParams.All)
                 {
+                    bool isFavorite = VRCAvatarParamSetterPreferences.IsFavorite(p.Name);
+                    if (_showFavoritesOnly && !isFavorite)
+                        continue;
+
                     EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.MinHeight(0));
+                    EditorGUILayout.BeginHorizontal();
+                    bool newFavorite = GUILayout.Toggle(isFavorite, isFavorite ? "★" : "☆", "Button", GUILayout.Width(30));
+                    if (newFavorite != isFavorite)
+                        VRCAvatarParamSetterPreferences.SetFavorite(p.Name, newFavorite);
                     EditorGUILayout.LabelField($"{p.Name} ({p.Type})", EditorStyles.label);
+                    EditorGUILayout.EndHorizontal();
                     if (!string.IsNullOrEmpty(p.Description))
-                        EditorGUILayout.LabelField(p.Description, EditorStyles.label);
+                        EditorGUILayout.LabelField(p.Description, GetWrappedLabelStyle());
+                    EditorGUILayout.LabelField("可動範囲: " + AvatarParamRangeResolver.GetRangeText(p), GetWrappedLabelStyle());
 
                     EditorGUILayout.Space(2);
                     EditorGUILayout.BeginHorizontal();
@@ -88,23 +111,9 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
                     // Animator への追加ボタン
                     bool hasController = controller != null;
-                    bool hasParam = false;
-                    if (hasController)
-                    {
-                        var parameters = controller.parameters;
-                        for (int i = 0; i < parameters.Length; i++)
-                        {
-                            if (parameters[i].name == p.Name)
-                            {
-                                hasParam = true;
-                                break;
-                            }
-                        }
-                    }
+                    bool hasParam = hasController && VRCAvatarParamSetterCore.HasParameter(controller, p.Name);
 
-                    bool isExcluded = VRCAvatarParamSetterPreferences.IsExcluded(p.Name);
-
-                    using (new EditorGUI.DisabledScope(!hasController || hasParam || isExcluded))
+                    using (new EditorGUI.DisabledScope(!hasController || hasParam))
                     {
                         var label = hasParam ? "追加済み" : "Animatorへ追加";
                         if (GUILayout.Button(label, GUILayout.Width(120)))
@@ -126,66 +135,11 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             EditorGUILayout.EndFoldoutHeaderGroup();
         }
 
-        static void DrawPreferencesLink()
+        GUIStyle GetWrappedLabelStyle()
         {
-            EditorGUILayout.Space(4);
-            EditorGUILayout.HelpBox(
-                "除外するパラメータは Edit > Preferences > SamirinEditorTools/VRCAvatarParamSetter で設定できます。",
-                MessageType.None);
-        }
-
-        static void AddMissingParameters(AnimatorController controller)
-        {
-            var existing = new HashSet<string>();
-            foreach (var p in controller.parameters)
-                existing.Add(p.name);
-
-            var addedNames = new List<string>();
-            foreach (var def in VRChatBuiltInParams.All)
-            {
-                if (existing.Contains(def.Name))
-                    continue;
-                if (VRCAvatarParamSetterPreferences.IsExcluded(def.Name))
-                    continue;
-
-                Undo.RecordObject(controller, "Add VRChat parameter: " + def.Name);
-                controller.AddParameter(def.Name, def.Type);
-                existing.Add(def.Name);
-                addedNames.Add(def.Name);
-            }
-
-            if (addedNames.Count > 0 && VRCAvatarParamSetterPreferences.AddParametersAtFront)
-            {
-                Undo.RecordObject(controller, "Reorder parameters");
-                var current = controller.parameters;
-                var addedSet = new HashSet<string>(addedNames);
-                var reordered = new List<AnimatorControllerParameter>(current.Length);
-                foreach (var name in addedNames)
-                {
-                    for (int i = 0; i < current.Length; i++)
-                    {
-                        if (current[i].name == name)
-                        {
-                            reordered.Add(current[i]);
-                            break;
-                        }
-                    }
-                }
-                foreach (var p in current)
-                {
-                    if (!addedSet.Contains(p.name))
-                        reordered.Add(p);
-                }
-                controller.parameters = reordered.ToArray();
-            }
-
-            if (addedNames.Count > 0)
-            {
-                EditorUtility.SetDirty(controller);
-                AssetDatabase.SaveAssetIfDirty(controller);
-            }
-
-            Debug.Log($"[VRCAvatarParamSetter] {controller.name}: {addedNames.Count} 個のパラメータを追加しました。");
+            var style = new GUIStyle(EditorStyles.label);
+            style.wordWrap = true;
+            return style;
         }
     }
 }

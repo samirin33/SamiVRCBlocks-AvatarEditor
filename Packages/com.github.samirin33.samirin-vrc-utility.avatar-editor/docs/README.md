@@ -16,4 +16,4 @@
 | 08 | [08-package-exporter.md](features/08-package-exporter.md) | Package Exporter |
 | 09 | [09-license-generator.md](features/09-license-generator.md) | VN3 License |
 | 10 | [10-animator-binding.md](features/10-animator-binding.md) | Animator Binding（ショートカット） |
-| 11 | [11-animator-transition-manager.md](features/11-animator-transition-manager.md) | Animator Transition Manager |
+| 11 | [11-animator-state-controller.md](features/11-animator-state-controller.md) | AnimatorStateController |

@@ -17,6 +17,10 @@ namespace Samirin33.AvatarEditor.Tools.Editor
     /// </summary>
     public static class AnimatorBinding
     {
+        private const string MenuPathConvergeToLast = "samirin33 Editor Tools/Animator Binding/新しいトランジションを作成、最後に収束";
+        private const string MenuPathDivergeFromFirst = "samirin33 Editor Tools/Animator Binding/新しいトランジションを作成、最初から拡散";
+        private const string MenuPathNewStateAtCenter = "samirin33 Editor Tools/Animator Binding/新しいステートを作成";
+
         /// <summary>ショートカット ID（<see cref="ShortcutManager"/> / 設定画面と共通）。</summary>
         public static class ShortcutIds
         {
@@ -493,6 +497,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             var hasCenterPos = TryGetAnimatorGraphCenterPosition(out var position);
             if (!hasCenterPos)
                 position = GetFallbackPosition(stateMachine);
+            position = ResolveNonOverlappingStatePosition(stateMachine, position);
 
             var name = GetUniqueStateName(stateMachine, "New State");
 
@@ -613,6 +618,39 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             return anchor + new Vector3(240f, 0f, 0f);
         }
 
+        private static Vector2 ResolveNonOverlappingStatePosition(AnimatorStateMachine stateMachine, Vector2 desiredPosition)
+        {
+            if (stateMachine == null) return desiredPosition;
+
+            var position = desiredPosition;
+            const float epsilon = 0.01f;
+            const float offsetX = 40f;
+            const float offsetY = 30f;
+            const int maxAttempts = 500;
+
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                var overlapped = false;
+                foreach (var child in stateMachine.states)
+                {
+                    if (child.state == null) continue;
+                    var p = child.position;
+                    if (Mathf.Abs(p.x - position.x) <= epsilon && Mathf.Abs(p.y - position.y) <= epsilon)
+                    {
+                        overlapped = true;
+                        break;
+                    }
+                }
+
+                if (!overlapped)
+                    return position;
+
+                position += new Vector2(offsetX, offsetY);
+            }
+
+            return position;
+        }
+
         private static bool TryGetAnimatorGraphCenterPosition(out Vector2 position)
         {
             position = default;
@@ -696,22 +734,56 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             public int GetHashCode(object obj) => RuntimeHelpers.GetHashCode(obj);
         }
 
-        [MenuItem("samirin33 Editor Tools/Animator/New Transition - Converge To Last", false, 110)]
+        [InitializeOnLoadMethod]
+        private static void InitializeMenuHotkeys()
+        {
+            SyncMenuHotkeysFromCurrentShortcutSettings();
+        }
+
+        [MenuItem(MenuPathConvergeToLast, true)]
+        private static bool ValidateMenuConvergeToLast()
+        {
+            SyncMenuHotkeysFromCurrentShortcutSettings();
+            return true;
+        }
+
+        [MenuItem(MenuPathConvergeToLast, false, 110)]
         public static void MenuConvergeToLast()
         {
             TryNewTransitionConvergeToLast();
         }
 
-        [MenuItem("samirin33 Editor Tools/Animator/New Transition - Diverge From First", false, 111)]
+        [MenuItem(MenuPathDivergeFromFirst, true)]
+        private static bool ValidateMenuDivergeFromFirst()
+        {
+            SyncMenuHotkeysFromCurrentShortcutSettings();
+            return true;
+        }
+
+        [MenuItem(MenuPathDivergeFromFirst, false, 111)]
         public static void MenuDivergeFromFirst()
         {
             TryNewTransitionDivergeFromFirst();
         }
 
-        [MenuItem("samirin33 Editor Tools/Animator/New State At Cursor", false, 112)]
+        [MenuItem(MenuPathNewStateAtCenter, true)]
+        private static bool ValidateMenuNewStateAtCursor()
+        {
+            SyncMenuHotkeysFromCurrentShortcutSettings();
+            return true;
+        }
+
+        [MenuItem(MenuPathNewStateAtCenter, false, 112)]
         public static void MenuNewStateAtCursor()
         {
             TryCreateNewStateAtCursor();
+        }
+
+        private static void SyncMenuHotkeysFromCurrentShortcutSettings()
+        {
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuPathConvergeToLast, ShortcutIds.NewTransitionConvergeToLast);
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuPathDivergeFromFirst, ShortcutIds.NewTransitionDivergeFromFirst);
+            AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuPathNewStateAtCenter, ShortcutIds.NewStateAtCursor);
         }
 
         [MenuItem("samirin33 Editor Tools/Animator Binding (Shortcuts)", false, 109)]
@@ -725,6 +797,44 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 "ショートカット設定は Unity 2022.2 以降の Preferences で利用できます。",
                 "OK");
 #endif
+        }
+    }
+
+    /// <summary>
+    /// <see cref="ShortcutManager"/> の現在の割当を <c>Menu.SetHotkey</c> へ反映し、メニュー上は <c>(表記)</c> 形式にする。
+    /// </summary>
+    internal static class AnimatorMenuHotkeyDisplay
+    {
+        public static void TrySetFromShortcutId(string menuPath, string shortcutId)
+        {
+            if (string.IsNullOrEmpty(menuPath) || string.IsNullOrEmpty(shortcutId))
+                return;
+
+            var binding = ShortcutManager.instance.GetShortcutBinding(shortcutId);
+            var hotkeyText = binding.ToString();
+            if (string.IsNullOrWhiteSpace(hotkeyText))
+            {
+                TryInvokeSetHotkey(menuPath, "");
+                return;
+            }
+
+            TryInvokeSetHotkey(menuPath, $"({hotkeyText})");
+        }
+
+        private static void TryInvokeSetHotkey(string menuPath, string hotkeyDisplay)
+        {
+            var menuType = typeof(MenuItem).Assembly.GetType("UnityEditor.Menu");
+            if (menuType == null) return;
+
+            var setHotkeyMethod = menuType.GetMethod(
+                "SetHotkey",
+                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
+                null,
+                new[] { typeof(string), typeof(string) },
+                null);
+            if (setHotkeyMethod == null) return;
+
+            setHotkeyMethod.Invoke(null, new object[] { menuPath, hotkeyDisplay });
         }
     }
 }

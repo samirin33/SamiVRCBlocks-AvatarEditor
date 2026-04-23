@@ -259,6 +259,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private static bool _fromAnyState;
         private static bool _active;
         private static double _startedAt;
+        private static double _notificationHideAt;
+        private static EditorWindow _notificationWindow;
 
         public static bool IsActive => _active;
 
@@ -276,6 +278,10 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
             Selection.selectionChanged += OnSelectionChanged;
             EditorApplication.update += OnEditorUpdate;
+
+            // 単一ステート起点のショートカット開始時は、次のクリックを明確にするため選択を解除する。
+            Selection.objects = Array.Empty<Object>();
+            Selection.activeObject = null;
 
             // Debug.Log(
             //     "[AnimatorBinding] 遷移先のステートを Animator ウィンドウで選択してください。" +
@@ -322,6 +328,20 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private static void OnEditorUpdate()
         {
             if (!_active) return;
+
+            if (_notificationWindow != null && EditorApplication.timeSinceStartup >= _notificationHideAt)
+            {
+                try
+                {
+                    _notificationWindow.RemoveNotification();
+                }
+                catch
+                {
+                    // ignored
+                }
+                _notificationWindow = null;
+                _notificationHideAt = 0;
+            }
 
             if (EditorApplication.timeSinceStartup - _startedAt > 120.0)
             {
@@ -383,12 +403,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                         Debug.LogWarning("[AnimatorBinding] Any State の遷移先は同一 Animator Controller 上である必要があります。");
                         return;
                     }
-
-                    if (HasExistingAnyStateTransition(_anyStateHost, anyDestState, null))
-                    {
-                        Debug.Log("[AnimatorBinding] 既に Any State からこのステートへのトランジションがあります。", anyDestState);
-                        return;
-                    }
                 }
                 else if (anyDestSm != null)
                 {
@@ -396,12 +410,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     if (string.IsNullOrEmpty(pathDestSm) || pathDestSm != pathHost)
                     {
                         Debug.LogWarning("[AnimatorBinding] Any State の遷移先は同一 Animator Controller 上である必要があります。");
-                        return;
-                    }
-
-                    if (HasExistingAnyStateTransition(_anyStateHost, null, anyDestSm))
-                    {
-                        Debug.Log("[AnimatorBinding] 既に Any State からこのサブステートマシンへのトランジションがあります。", anyDestSm);
                         return;
                     }
 
@@ -456,9 +464,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (_from == null) return;
 
             if (!AnimatorGraphDestinationResolver.TryResolve(Selection.activeObject, out var destState, out var destSm, out var toExit))
-                return;
-
-            if (!toExit && destState != null && destState == _from)
                 return;
 
             var pathA = AssetDatabase.GetAssetPath(_from);
@@ -523,32 +528,14 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 AnimatorStateTransition tr;
                 if (toExit)
                 {
-                    if (HasExitTransitionFromState(_from))
-                    {
-                        Debug.Log("[AnimatorBinding] 既にこのステートから Exit へのトランジションがあります。", _from);
-                        return;
-                    }
-
                     tr = _from.AddExitTransition();
                 }
                 else if (destSm != null)
                 {
-                    if (HasTransitionToStateMachine(_from, destSm))
-                    {
-                        Debug.Log("[AnimatorBinding] 既にこのサブステートマシンへのトランジションがあります。", destSm);
-                        return;
-                    }
-
                     tr = _from.AddTransition(destSm);
                 }
                 else
                 {
-                    if (HasSimpleTransitionToState(_from, destState))
-                    {
-                        Debug.Log("[AnimatorBinding] 既にこのステートへのトランジションがあります。", destState);
-                        return;
-                    }
-
                     tr = _from.AddTransition(destState);
                 }
 
@@ -565,31 +552,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             {
                 End();
             }
-        }
-
-        private static bool HasSimpleTransitionToState(AnimatorState from, AnimatorState to)
-        {
-            if (from == null || to == null) return false;
-            foreach (var tr in from.transitions)
-            {
-                if (tr.isExit) continue;
-                if (tr.destinationStateMachine != null) continue;
-                if (tr.destinationState == to) return true;
-            }
-
-            return false;
-        }
-
-        private static bool HasTransitionToStateMachine(AnimatorState from, AnimatorStateMachine sm)
-        {
-            if (from == null || sm == null) return false;
-            foreach (var tr in from.transitions)
-            {
-                if (tr.isExit) continue;
-                if (tr.destinationStateMachine == sm) return true;
-            }
-
-            return false;
         }
 
         private static bool TryShowStateMachineDestinationMenu(
@@ -676,22 +638,10 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 AnimatorStateTransition tr;
                 if (destinationState != null)
                 {
-                    if (HasExistingAnyStateTransition(sourceAnyStateMachine, destinationState, null))
-                    {
-                        Debug.Log("[AnimatorBinding] 既に Any State からこのステートへのトランジションがあります。", destinationState);
-                        return;
-                    }
-
                     tr = sourceAnyStateMachine.AddAnyStateTransition(destinationState);
                 }
                 else
                 {
-                    if (HasExistingAnyStateTransition(sourceAnyStateMachine, null, destinationStateMachine))
-                    {
-                        Debug.Log("[AnimatorBinding] 既に Any State からこのサブステートマシンへのトランジションがあります。", destinationStateMachine);
-                        return;
-                    }
-
                     tr = sourceAnyStateMachine.AddAnyStateTransition(destinationStateMachine);
                 }
 
@@ -738,32 +688,14 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 AnimatorStateTransition tr;
                 if (toExit)
                 {
-                    if (HasExitTransitionFromState(sourceState))
-                    {
-                        Debug.Log("[AnimatorBinding] 既にこのステートから Exit へのトランジションがあります。", sourceState);
-                        return;
-                    }
-
                     tr = sourceState.AddExitTransition();
                 }
                 else if (destinationStateMachine != null)
                 {
-                    if (HasTransitionToStateMachine(sourceState, destinationStateMachine))
-                    {
-                        Debug.Log("[AnimatorBinding] 既にこのサブステートマシンへのトランジションがあります。", destinationStateMachine);
-                        return;
-                    }
-
                     tr = sourceState.AddTransition(destinationStateMachine);
                 }
                 else
                 {
-                    if (HasSimpleTransitionToState(sourceState, destinationState))
-                    {
-                        Debug.Log("[AnimatorBinding] 既にこのステートへのトランジションがあります。", destinationState);
-                        return;
-                    }
-
                     tr = sourceState.AddTransition(destinationState);
                 }
 
@@ -782,17 +714,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             }
         }
 
-        private static bool HasExitTransitionFromState(AnimatorState from)
-        {
-            if (from == null) return false;
-            foreach (var tr in from.transitions)
-            {
-                if (tr.isExit) return true;
-            }
-
-            return false;
-        }
-
         public static void Cancel()
         {
             if (!_active) return;
@@ -808,24 +729,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             _from = null;
             _fromAnyState = false;
             _anyStateHost = null;
-        }
-
-        private static bool HasExistingAnyStateTransition(
-            AnimatorStateMachine host,
-            AnimatorState destState,
-            AnimatorStateMachine destSm)
-        {
-            if (host == null) return false;
-            foreach (var tr in host.anyStateTransitions)
-            {
-                if (tr == null) continue;
-                if (destState != null && tr.destinationState == destState && tr.destinationStateMachine == null)
-                    return true;
-                if (destSm != null && tr.destinationStateMachine == destSm)
-                    return true;
-            }
-
-            return false;
+            _notificationWindow = null;
+            _notificationHideAt = 0;
         }
 
         private static void TryShowNotificationOnAnimatorWindow(string message)
@@ -836,7 +741,11 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             {
                 var win = EditorWindow.GetWindow(toolType, false, null, false);
                 if (win != null)
+                {
                     win.ShowNotification(new GUIContent(message));
+                    _notificationWindow = win;
+                    _notificationHideAt = EditorApplication.timeSinceStartup + 0.2d;
+                }
             }
             catch
             {

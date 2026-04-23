@@ -91,8 +91,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
         private PanelVisibility _visiblePanels = PanelVisibility.All;
 
-        private bool _foldoutBlendSettings = true;
-        private bool _foldoutConditions = true;
         private bool _foldoutClipboardPanel = false;
         private readonly List<bool> _clipboardSlotFold = new List<bool>();
         private readonly List<bool> _clipboardSlotFoldBlend = new List<bool>();
@@ -113,6 +111,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private ReorderableList _reorderConditions;
         private List<AnimatorTransitionBase> _conditionEditTargetTransitions;
         private List<AnimatorController> _conditionEditMenuControllers;
+        private readonly Dictionary<int, UnityEditor.Editor> _behaviourEditors = new Dictionary<int, UnityEditor.Editor>();
 
         private struct ConditionEditRow
         {
@@ -128,6 +127,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private static GUIContent _cachedDeleteIcon;
 
         private static GUIStyle _foldoutStyleNormal;
+        private static GUIStyle _centeredLabelStyle;
 
         private static GUIStyle FoldoutStyleNormal
         {
@@ -145,6 +145,22 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             }
         }
 
+        private static GUIStyle CenteredLabelStyle
+        {
+            get
+            {
+                if (_centeredLabelStyle == null)
+                {
+                    _centeredLabelStyle = new GUIStyle(EditorStyles.label)
+                    {
+                        alignment = TextAnchor.MiddleCenter
+                    };
+                }
+
+                return _centeredLabelStyle;
+            }
+        }
+
         /// <summary>
         /// スクロール内でも折り返し全文が計算されるよう wide を付与（複数行で見切れないようにする）。
         /// </summary>
@@ -153,10 +169,10 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             EditorGUILayout.HelpBox(message, messageType, true);
         }
 
-        [MenuItem("samirin33 Editor Tools/Animator/トランジション管理ウィンドウ", false, 110)]
+        [MenuItem("samirin33 Editor Tools/AnimatorStateController", false, 110)]
         public static void Open()
         {
-            var window = GetWindow<AnimatorTransitionManager>("Animator Transition Manager");
+            var window = GetWindow<AnimatorTransitionManager>("AnimatorStateController");
             window.minSize = new Vector2(560f, 320f);
             window.RefreshSelection();
         }
@@ -170,6 +186,16 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         {
             RefreshSelection();
             Repaint();
+        }
+
+        private void OnDisable()
+        {
+            foreach (var ed in _behaviourEditors.Values)
+            {
+                if (ed != null)
+                    DestroyImmediate(ed);
+            }
+            _behaviourEditors.Clear();
         }
 
         private void OnGUI()
@@ -226,10 +252,12 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
             var showList = true;
             var showSettings = true;
-            var showClip = true;
+            var showClip = false;
 
             DrawSetSubStateDefaultButtonIfNeeded();
+            DrawSelectedStateEditor();
 
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
             if (showList)
             {
                 if (_outgoing.Count == 0 && _incoming.Count == 0)
@@ -244,9 +272,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     DrawEdgeSection(outgoingTitle, _outgoing, ref _reorderOutgoing, true);
                     DrawEdgeSection("内向きトランジション", _incoming, ref _reorderIncoming, false);
                 }
-
-                if (showSettings || showClip)
-                    EditorGUILayout.Space(10f);
             }
 
             if (showSettings)
@@ -255,6 +280,9 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 if (showClip)
                     EditorGUILayout.Space(10f);
             }
+            EditorGUILayout.EndVertical();
+
+            DrawSelectedStateBehaviourSection();
 
             if (showClip)
             {
@@ -262,6 +290,506 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     EditorGUILayout.Space(12f);
                 DrawClipboardSummary();
             }
+        }
+
+        private void DrawSelectedStateEditor()
+        {
+            if (Selection.activeObject is not AnimatorState state)
+                return;
+
+            var path = AssetDatabase.GetAssetPath(state);
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(path);
+            if (controller == null)
+                return;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
+            EditorGUILayout.LabelField("ステート設定", EditorStyles.label);
+
+            var changed = false;
+            var newName = EditorGUILayout.TextField("ステート名", state.name);
+            var newMotion = (Motion)EditorGUILayout.ObjectField("AnimationClip / Motion", state.motion, typeof(Motion), false);
+            var useMotionTime = state.timeParameterActive;
+
+            var newSpeed = state.speed;
+            var newSpeedMultiplierEnabled = state.speedParameterActive;
+            var newSpeedMultiplierParameter = state.speedParameter;
+            var newMotionTimeParameter = state.timeParameter;
+
+            if (!useMotionTime)
+            {
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    newSpeed = EditorGUILayout.FloatField("Speed", state.speed);
+                    newSpeedMultiplierEnabled = EditorGUILayout.ToggleLeft("Multiplier", state.speedParameterActive, GUILayout.Width(90f));
+                }
+
+                if (newSpeedMultiplierEnabled)
+                {
+                    var floatParams = GetFloatParameterNames(controller);
+                    newSpeedMultiplierParameter = DrawFloatParameterPopup("Multiplier", state.speedParameter, floatParams);
+                }
+            }
+
+            useMotionTime = EditorGUILayout.ToggleLeft("MotionTime を使用", useMotionTime);
+            if (useMotionTime)
+            {
+                var floatParams = GetFloatParameterNames(controller);
+                newMotionTimeParameter = DrawFloatParameterPopup("MotionTime", state.timeParameter, floatParams);
+            }
+
+            var newWriteDefaults = EditorGUILayout.Toggle("Write Default", state.writeDefaultValues);
+
+            if (newName != state.name) changed = true;
+            if (newMotion != state.motion) changed = true;
+            if (useMotionTime != state.timeParameterActive) changed = true;
+            if (!useMotionTime && !Mathf.Approximately(newSpeed, state.speed)) changed = true;
+            if (!useMotionTime && newSpeedMultiplierEnabled != state.speedParameterActive) changed = true;
+            if (!useMotionTime && newSpeedMultiplierEnabled && newSpeedMultiplierParameter != state.speedParameter) changed = true;
+            if (useMotionTime && newMotionTimeParameter != state.timeParameter) changed = true;
+            if (newWriteDefaults != state.writeDefaultValues) changed = true;
+
+            if (changed)
+            {
+                Undo.RecordObject(state, "Edit Animator State");
+                state.name = newName;
+                state.motion = newMotion;
+                state.timeParameterActive = useMotionTime;
+                if (useMotionTime)
+                {
+                    state.timeParameter = newMotionTimeParameter;
+                    state.speedParameterActive = false;
+                }
+                else
+                {
+                    state.speed = newSpeed;
+                    state.speedParameterActive = newSpeedMultiplierEnabled;
+                    state.speedParameter = newSpeedMultiplierEnabled ? newSpeedMultiplierParameter : string.Empty;
+                }
+
+                state.writeDefaultValues = newWriteDefaults;
+                EditorUtility.SetDirty(state);
+                EditorUtility.SetDirty(controller);
+                InternalEditorUtility.RepaintAllViews();
+            }
+
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(8f);
+        }
+
+        private void DrawSelectedStateBehaviourSection()
+        {
+            var selected = CollectSelectedStatesWithController();
+            if (selected.Count == 0)
+                return;
+
+            DrawStateBehaviourSection(selected);
+        }
+
+        private List<(AnimatorState state, AnimatorController controller)> CollectSelectedStatesWithController()
+        {
+            var result = new List<(AnimatorState state, AnimatorController controller)>();
+            var seen = new HashSet<int>();
+            void TryAdd(Object o)
+            {
+                if (o is not AnimatorState st) return;
+                if (!seen.Add(st.GetInstanceID())) return;
+                var path = AssetDatabase.GetAssetPath(st);
+                if (string.IsNullOrEmpty(path)) return;
+                var ctrl = AssetDatabase.LoadAssetAtPath<AnimatorController>(path);
+                if (ctrl == null) return;
+                result.Add((st, ctrl));
+            }
+
+            foreach (var o in Selection.objects)
+                TryAdd(o);
+            foreach (var id in Selection.instanceIDs)
+                TryAdd(EditorUtility.InstanceIDToObject(id));
+            TryAdd(Selection.activeObject);
+
+            return result;
+        }
+
+        private void DrawStateBehaviourSection(List<(AnimatorState state, AnimatorController controller)> selectedStates)
+        {
+            if (selectedStates == null || selectedStates.Count == 0)
+                return;
+
+            var allStates = selectedStates.Select(s => s.state).Where(s => s != null).ToList();
+            var controllers = selectedStates.Select(s => s.controller).Where(c => c != null).Distinct().ToList();
+            if (allStates.Count == 0 || controllers.Count == 0)
+                return;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
+            EditorGUILayout.LabelField(
+                selectedStates.Count > 1 ? $"Behaviour ({selectedStates.Count} ステート選択中)" : "Behaviour",
+                EditorStyles.label);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("追加", GUILayout.Width(80f)))
+                    ShowAddBehaviourMenu(selectedStates);
+
+                var copiedType = Type.GetType(AnimatorBehivaourCopy.GetCopiedTypeName() ?? "", false);
+                var canPasteAsNew = AnimatorBehivaourCopy.HasCopiedBehaviour &&
+                                    copiedType != null &&
+                                    typeof(StateMachineBehaviour).IsAssignableFrom(copiedType);
+                EditorGUI.BeginDisabledGroup(!canPasteAsNew);
+                if (GUILayout.Button("ペースト(新規)", GUILayout.Width(110f)) && canPasteAsNew)
+                {
+                    Undo.RegisterCompleteObjectUndo(controllers.ToArray(), "Paste StateMachineBehaviour As New");
+                    foreach (var st in allStates)
+                        AnimatorBehivaourCopy.PasteAsNew(st, copiedType);
+                    foreach (var c in controllers)
+                        EditorUtility.SetDirty(c);
+                    RefreshSelection();
+                    InternalEditorUtility.RepaintAllViews();
+                }
+                EditorGUI.EndDisabledGroup();
+                GUILayout.FlexibleSpace();
+            }
+
+            var maxBehaviourCount = allStates.Max(s => s.behaviours?.Length ?? 0);
+            if (maxBehaviourCount == 0)
+            {
+                HelpBoxFullWidth("このステートには Behaviour が登録されていません。", MessageType.Info);
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(8f);
+                return;
+            }
+
+            var allExisting = new List<StateMachineBehaviour>();
+            for (var i = 0; i < maxBehaviourCount; i++)
+            {
+                var perIndex = allStates
+                    .Select(s =>
+                    {
+                        var arr = s.behaviours ?? Array.Empty<StateMachineBehaviour>();
+                        return i < arr.Length ? arr[i] : null;
+                    })
+                    .ToList();
+                var existing = perIndex.Where(b => b != null).ToList();
+                if (existing.Count == 0)
+                    continue;
+                allExisting.AddRange(existing);
+            }
+            CleanupBehaviourEditors(allExisting.ToArray());
+
+            for (var i = 0; i < maxBehaviourCount; i++)
+            {
+                var perIndex = allStates
+                    .Select(s =>
+                    {
+                        var arr = s.behaviours ?? Array.Empty<StateMachineBehaviour>();
+                        return i < arr.Length ? arr[i] : null;
+                    })
+                    .ToList();
+                var existing = perIndex.Where(b => b != null).ToList();
+                if (existing.Count == 0)
+                    continue;
+                var representative = existing[0];
+                var allHave = existing.Count == allStates.Count;
+                var sameType = existing.All(b => b.GetType() == representative.GetType()) && allHave;
+                var deleted = false;
+
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    var rowIndex = i;
+                    var typeLabel = sameType ? representative.GetType().Name : "Mixed / Missing";
+                    EditorGUILayout.LabelField($"{i + 1}. {typeLabel}", EditorStyles.boldLabel);
+                    GUILayout.FlexibleSpace();
+
+                    if (GUILayout.Button("↕", GUILayout.Width(30f)))
+                    {
+                        var menu = new GenericMenu();
+                        var canMoveUp = CanMoveStateBehaviour(selectedStates, rowIndex, -1);
+                        var canMoveDown = CanMoveStateBehaviour(selectedStates, rowIndex, 1);
+                        if (canMoveUp)
+                        {
+                            menu.AddItem(new GUIContent("上へ"), false,
+                                () => MoveStateBehaviourAt(selectedStates, rowIndex, -1));
+                        }
+                        else
+                        {
+                            menu.AddDisabledItem(new GUIContent("上へ"));
+                        }
+
+                        if (canMoveDown)
+                        {
+                            menu.AddItem(new GUIContent("下へ"), false,
+                                () => MoveStateBehaviourAt(selectedStates, rowIndex, 1));
+                        }
+                        else
+                        {
+                            menu.AddDisabledItem(new GUIContent("下へ"));
+                        }
+
+                        menu.ShowAsContext();
+                    }
+
+                    if (GUILayout.Button("Copy", GUILayout.Width(52f)))
+                        AnimatorBehivaourCopy.Copy(representative);
+
+                    var canPasteValues = AnimatorBehivaourCopy.HasCopiedBehaviour &&
+                                         sameType &&
+                                         AnimatorBehivaourCopy.IsCopiedTypeMatch(representative.GetType());
+                    EditorGUI.BeginDisabledGroup(!canPasteValues);
+                    if (GUILayout.Button("Paste", GUILayout.Width(52f)) && canPasteValues)
+                    {
+                        Undo.RegisterCompleteObjectUndo(existing.ToArray(), "Paste StateMachineBehaviour Values");
+                        foreach (var b in existing)
+                            AnimatorBehivaourCopy.PasteValues(b);
+                        foreach (var c in controllers)
+                            EditorUtility.SetDirty(c);
+                        InternalEditorUtility.RepaintAllViews();
+                    }
+                    EditorGUI.EndDisabledGroup();
+
+                    if (GUILayout.Button("削除", GUILayout.Width(52f)))
+                    {
+                        RemoveStateBehaviourAt(selectedStates, i);
+                        deleted = true;
+                    }
+                }
+
+                if (deleted)
+                {
+                    EditorGUILayout.EndVertical();
+                    EditorGUILayout.EndVertical();
+                    EditorGUILayout.Space(8f);
+                    return;
+                }
+
+                if (!sameType)
+                {
+                    HelpBoxFullWidth("同時編集するには、全選択ステートで同じ index に同じ型の Behaviour が必要です。", MessageType.Info);
+                }
+                else
+                {
+                    var editor = GetOrCreateBehaviourEditor(representative);
+                    if (editor != null)
+                    {
+                        EditorGUI.BeginChangeCheck();
+                        editor.OnInspectorGUI();
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            // 複数選択時は代表1件のカスタムInspectorを表示し、変更後に同indexへ値を同期する。
+                            if (existing.Count > 1)
+                            {
+                                var json = EditorJsonUtility.ToJson(representative);
+                                var others = existing.Where(b => b != null && !ReferenceEquals(b, representative)).ToArray();
+                                if (others.Length > 0)
+                                    Undo.RegisterCompleteObjectUndo(others, "Sync StateMachineBehaviour Values");
+                                foreach (var other in others)
+                                    EditorJsonUtility.FromJsonOverwrite(json, other);
+                            }
+
+                            foreach (var b in existing)
+                                EditorUtility.SetDirty(b);
+                            foreach (var c in controllers)
+                                EditorUtility.SetDirty(c);
+                        }
+                    }
+                }
+
+                EditorGUILayout.EndVertical();
+            }
+
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(8f);
+        }
+
+        private void ShowAddBehaviourMenu(List<(AnimatorState state, AnimatorController controller)> selectedStates)
+        {
+            var menu = new GenericMenu();
+            var controllers = selectedStates.Select(s => s.controller).Where(c => c != null).Distinct().ToArray();
+            var states = selectedStates.Select(s => s.state).Where(s => s != null).ToArray();
+            var types = TypeCache.GetTypesDerivedFrom<StateMachineBehaviour>()
+                .Where(t => t != null && !t.IsAbstract && !t.IsGenericType && t.IsClass)
+                .OrderBy(t => t.FullName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (types.Count == 0)
+            {
+                menu.AddDisabledItem(new GUIContent("(追加可能な Behaviour がありません)"));
+            }
+            else
+            {
+                foreach (var type in types)
+                {
+                    var captured = type;
+                    var ns = captured.Namespace ?? string.Empty;
+                    var isVrcSdkType =
+                        ns.IndexOf("VRC", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        captured.Name.IndexOf("VRC", StringComparison.OrdinalIgnoreCase) >= 0;
+                    var label = isVrcSdkType
+                        ? $"{captured.Name} ({ns})"
+                        : (captured.FullName?.Replace('.', '/') ?? captured.Name);
+                    menu.AddItem(new GUIContent(label), false, () =>
+                    {
+                        Undo.RegisterCompleteObjectUndo(controllers, "Add StateMachineBehaviour");
+                        foreach (var st in states)
+                            st.AddStateMachineBehaviour(captured);
+                        foreach (var c in controllers)
+                            EditorUtility.SetDirty(c);
+                        RefreshSelection();
+                        InternalEditorUtility.RepaintAllViews();
+                    });
+                }
+            }
+
+            menu.ShowAsContext();
+        }
+
+        private void RemoveStateBehaviourAt(List<(AnimatorState state, AnimatorController controller)> selectedStates, int index)
+        {
+            if (selectedStates == null || selectedStates.Count == 0)
+                return;
+            var controllers = selectedStates.Select(s => s.controller).Where(c => c != null).Distinct().ToArray();
+            if (controllers.Length == 0)
+                return;
+            Undo.RegisterCompleteObjectUndo(controllers, "Remove StateMachineBehaviour");
+
+            foreach (var pair in selectedStates)
+            {
+                var state = pair.state;
+                if (state == null)
+                    continue;
+                var src = state.behaviours ?? Array.Empty<StateMachineBehaviour>();
+                if (index < 0 || index >= src.Length)
+                    continue;
+
+                var target = src[index];
+                state.behaviours = src.Where((_, i) => i != index).ToArray();
+                if (target != null)
+                {
+                    var id = target.GetInstanceID();
+                    if (_behaviourEditors.TryGetValue(id, out var ed) && ed != null)
+                        DestroyImmediate(ed);
+                    _behaviourEditors.Remove(id);
+                    DestroyImmediate(target, true);
+                }
+            }
+
+            foreach (var c in controllers)
+                EditorUtility.SetDirty(c);
+            RefreshSelection();
+            InternalEditorUtility.RepaintAllViews();
+        }
+
+        private static bool CanMoveStateBehaviour(
+            List<(AnimatorState state, AnimatorController controller)> selectedStates,
+            int index,
+            int direction)
+        {
+            if (selectedStates == null || selectedStates.Count == 0 || direction == 0)
+                return false;
+
+            foreach (var pair in selectedStates)
+            {
+                var state = pair.state;
+                if (state == null)
+                    continue;
+                var arr = state.behaviours ?? Array.Empty<StateMachineBehaviour>();
+                var targetIndex = index + direction;
+                if (index < 0 || index >= arr.Length || targetIndex < 0 || targetIndex >= arr.Length)
+                    return false;
+            }
+
+            return true;
+        }
+
+        private void MoveStateBehaviourAt(
+            List<(AnimatorState state, AnimatorController controller)> selectedStates,
+            int index,
+            int direction)
+        {
+            if (!CanMoveStateBehaviour(selectedStates, index, direction))
+                return;
+
+            var controllers = selectedStates.Select(s => s.controller).Where(c => c != null).Distinct().ToArray();
+            if (controllers.Length == 0)
+                return;
+
+            var targetIndex = index + direction;
+            Undo.RegisterCompleteObjectUndo(controllers, "Reorder StateMachineBehaviour");
+
+            foreach (var pair in selectedStates)
+            {
+                var state = pair.state;
+                if (state == null)
+                    continue;
+                var arr = state.behaviours ?? Array.Empty<StateMachineBehaviour>();
+                if (index < 0 || index >= arr.Length || targetIndex < 0 || targetIndex >= arr.Length)
+                    continue;
+
+                (arr[index], arr[targetIndex]) = (arr[targetIndex], arr[index]);
+                state.behaviours = arr;
+            }
+
+            foreach (var c in controllers)
+                EditorUtility.SetDirty(c);
+            RefreshSelection();
+            InternalEditorUtility.RepaintAllViews();
+        }
+
+        private UnityEditor.Editor GetOrCreateBehaviourEditor(StateMachineBehaviour behaviour)
+        {
+            if (behaviour == null)
+                return null;
+            var id = behaviour.GetInstanceID();
+            if (_behaviourEditors.TryGetValue(id, out var existing) && existing != null && existing.target == behaviour)
+                return existing;
+
+            if (existing != null)
+                DestroyImmediate(existing);
+            var editor = UnityEditor.Editor.CreateEditor(behaviour);
+            _behaviourEditors[id] = editor;
+            return editor;
+        }
+
+        private void CleanupBehaviourEditors(StateMachineBehaviour[] currentBehaviours)
+        {
+            var validIds = new HashSet<int>(currentBehaviours.Where(b => b != null).Select(b => b.GetInstanceID()));
+            var staleIds = _behaviourEditors.Keys.Where(id => !validIds.Contains(id)).ToList();
+            foreach (var id in staleIds)
+            {
+                if (_behaviourEditors.TryGetValue(id, out var ed) && ed != null)
+                    DestroyImmediate(ed);
+                _behaviourEditors.Remove(id);
+            }
+        }
+
+        private static string DrawFloatParameterPopup(string label, string current, List<string> parameterNames)
+        {
+            if (parameterNames.Count == 0)
+            {
+                EditorGUILayout.HelpBox("Float パラメータがありません。Animator Controller に追加してください。", MessageType.Warning, true);
+                return string.Empty;
+            }
+
+            var index = parameterNames.IndexOf(current);
+            if (index < 0) index = 0;
+            var next = EditorGUILayout.Popup(label, index, parameterNames.ToArray());
+            return parameterNames[Mathf.Clamp(next, 0, parameterNames.Count - 1)];
+        }
+
+        private static List<string> GetFloatParameterNames(AnimatorController controller)
+        {
+            var result = new List<string>();
+            if (controller == null || controller.parameters == null)
+                return result;
+
+            foreach (var p in controller.parameters)
+            {
+                if (p != null && p.type == AnimatorControllerParameterType.Float && !string.IsNullOrEmpty(p.name))
+                    result.Add(p.name);
+            }
+
+            return result;
         }
 
         private void DrawSetSubStateDefaultButtonIfNeeded()
@@ -481,8 +1009,51 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     x += 28f;
                     EditorGUI.LabelField(idxRect, $"{index + 1}.", EditorStyles.miniLabel);
 
+                    var remaining = rect.xMax - x - 4f;
+                    var iconW = 18f;
+                    var gap = 4f;
+                    const float actionBtnW = 22f;
+                    var actionReserve = actionBtnW * 3f + gap * 2f;
+                    var pairW = Mathf.Max(40f, (remaining - iconW - actionReserve - gap) * 0.5f);
+
+                    var srcRect = new Rect(x, y, pairW, h);
+                    x += pairW + gap * 0.5f;
+                    var iconRect = new Rect(x, y, iconW, h);
+                    x += iconW + gap * 0.5f;
+                    var dstRect = new Rect(x, y, pairW, h);
+                    x += pairW + gap * 0.5f;
+
+                    var activeState = Selection.activeObject as AnimatorState;
+                    var isSourceSelfState = activeState != null && ReferenceEquals(srcObj, activeState);
+                    var isDestinationSelfState = activeState != null && ReferenceEquals(dstObj, activeState);
+
+                    if (isSourceSelfState)
+                        EditorGUI.LabelField(srcRect, srcLabel, CenteredLabelStyle);
+                    else if (GUI.Button(srcRect, srcLabel, EditorStyles.miniButton))
+                        SelectForInspector(srcObj);
+
+                    GUI.Label(iconRect, BetweenIcon, EditorStyles.label);
+
+                    if (isDestinationSelfState)
+                        EditorGUI.LabelField(dstRect, dstLabel, CenteredLabelStyle);
+                    else if (GUI.Button(dstRect, dstLabel, EditorStyles.miniButton))
+                        SelectForInspector(dstObj);
+
+                    var copyRect = new Rect(x, y, actionBtnW, h);
+                    x += actionBtnW + gap;
+                    var pasteOwRect = new Rect(x, y, actionBtnW, h);
+                    x += actionBtnW + gap;
+                    var deleteRect = new Rect(x, y, actionBtnW, h);
+
                     var e = Event.current;
-                    if (e.type == EventType.MouseDown && e.button == 0 && idxRect.Contains(e.mousePosition))
+                    var rowSelectableRect = new Rect(rect.x, rect.y, rect.width, rect.height);
+                    var clickedOnInteractiveControl =
+                        copyRect.Contains(e.mousePosition) ||
+                        pasteOwRect.Contains(e.mousePosition) ||
+                        deleteRect.Contains(e.mousePosition);
+
+                    if (e.type == EventType.MouseDown && e.button == 0 && rowSelectableRect.Contains(e.mousePosition) &&
+                        !clickedOnInteractiveControl)
                     {
                         var addToSelection = e.control || e.command;
                         if (addToSelection)
@@ -518,34 +1089,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                         Repaint();
                     }
 
-                    var remaining = rect.xMax - x - 4f;
-                    var iconW = 18f;
-                    var gap = 4f;
-                    const float actionBtnW = 22f;
-                    var actionReserve = actionBtnW * 3f + gap * 2f;
-                    var pairW = Mathf.Max(40f, (remaining - iconW - actionReserve - gap) * 0.5f);
-
-                    var srcRect = new Rect(x, y, pairW, h);
-                    x += pairW + gap * 0.5f;
-                    var iconRect = new Rect(x, y, iconW, h);
-                    x += iconW + gap * 0.5f;
-                    var dstRect = new Rect(x, y, pairW, h);
-                    x += pairW + gap * 0.5f;
-
-                    if (GUI.Button(srcRect, srcLabel, EditorStyles.miniButton))
-                        SelectForInspector(srcObj);
-
-                    GUI.Label(iconRect, BetweenIcon, EditorStyles.label);
-
-                    if (GUI.Button(dstRect, dstLabel, EditorStyles.miniButton))
-                        SelectForInspector(dstObj);
-
-                    var copyRect = new Rect(x, y, actionBtnW, h);
-                    x += actionBtnW + gap;
-                    var pasteOwRect = new Rect(x, y, actionBtnW, h);
-                    x += actionBtnW + gap;
-                    var deleteRect = new Rect(x, y, actionBtnW, h);
-
                     if (GUI.Button(copyRect, CopyIcon))
                     {
                         AnimatorTransitionMultiCopy.CopyMergedSettings(item.transition);
@@ -554,8 +1097,19 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
                     if (GUI.Button(pasteOwRect, PasteOverwriteIcon))
                     {
+                        var preservedBucket = _selectionBucket;
+                        var preservedTransitionIds = GetSelectedRows()
+                            .Select(r => r.transition)
+                            .Where(t => t != null)
+                            .Select(t => t.GetInstanceID())
+                            .ToHashSet();
                         if (AnimatorTransitionMultiCopy.TryPasteMergedOverwrite(item.transition))
+                        {
                             AssetDatabase.SaveAssets();
+                            RefreshSelection();
+                            RestoreRowSelection(preservedBucket, preservedTransitionIds);
+                            InternalEditorUtility.RepaintAllViews();
+                        }
                         Repaint();
                     }
 
@@ -645,7 +1199,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             var neu = AnimatorTransitionEditOperations.TryCreateParallelTransition(loc);
             if (neu == null)
             {
-                EditorUtility.DisplayDialog("Animator Transition Manager", "同じ経路のトランジションを追加できませんでした。", "OK");
+                EditorUtility.DisplayDialog("AnimatorStateController", "同じ経路のトランジションを追加できませんでした。", "OK");
                 return;
             }
 
@@ -716,32 +1270,20 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             var transitions = rows.Select(r => r.transition).Where(t => t != null).ToList();
             var stateTransitions = transitions.OfType<AnimatorStateTransition>().ToList();
 
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
             if (stateTransitions.Count > 0)
             {
                 if (stateTransitions.Count < transitions.Count)
                     HelpBoxFullWidth(
                         "ブレンド／中断の各項目は AnimatorStateTransition にのみ適用されます（Entry 等は対象外）。",
                         MessageType.Info);
-
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
-                _foldoutBlendSettings = EditorGUILayout.Foldout(_foldoutBlendSettings, "ブレンド / 中断", true,
-                    FoldoutStyleNormal);
-                if (_foldoutBlendSettings)
-                    DrawAnimatorStateTransitionBlendFields(stateTransitions);
-                EditorGUILayout.EndVertical();
+                DrawAnimatorStateTransitionBlendFields(stateTransitions);
             }
-            else
-            {
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
-                _foldoutBlendSettings = EditorGUILayout.Foldout(_foldoutBlendSettings, "ブレンド / 中断", true,
-                    FoldoutStyleNormal);
-                EditorGUILayout.EndVertical();
-            }
+            EditorGUILayout.EndVertical();
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
-            _foldoutConditions = EditorGUILayout.Foldout(_foldoutConditions, "条件", true, FoldoutStyleNormal);
-            if (_foldoutConditions)
-                DrawConditionListEditor(transitions);
+            EditorGUILayout.LabelField("条件", EditorStyles.label);
+            DrawConditionListEditor(transitions);
             EditorGUILayout.EndVertical();
 
             EditorGUILayout.EndVertical();
@@ -859,6 +1401,18 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 MarkControllersDirty(asts);
             }
 
+            bool? GetCommonBool(System.Func<AnimatorStateTransition, bool> read)
+            {
+                var vals = asts.Select(read).Distinct().ToList();
+                return vals.Count == 1 ? vals[0] : (bool?)null;
+            }
+
+            TransitionInterruptionSource? GetCommonInterruptionSource()
+            {
+                var vals = asts.Select(a => a.interruptionSource).Distinct().ToList();
+                return vals.Count == 1 ? vals[0] : (TransitionInterruptionSource?)null;
+            }
+
             void ApplyEnum(System.Func<AnimatorStateTransition, TransitionInterruptionSource> read,
                 System.Action<AnimatorStateTransition, TransitionInterruptionSource> write, string label)
             {
@@ -878,11 +1432,26 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
             ApplyFloat(a => a.duration, (a, v) => a.duration = v, "Duration");
             ApplyFloat(a => a.offset, (a, v) => a.offset = v, "Offset");
-            ApplyBool(a => a.hasExitTime, (a, v) => a.hasExitTime = v, "Has Exit Time");
-            ApplyFloat(a => a.exitTime, (a, v) => a.exitTime = v, "Exit Time");
-            ApplyBool(a => a.hasFixedDuration, (a, v) => a.hasFixedDuration = v, "Fixed Duration");
-            ApplyEnum(a => a.interruptionSource, (a, v) => a.interruptionSource = v, "Interruption Source");
-            ApplyBool(a => a.orderedInterruption, (a, v) => a.orderedInterruption = v, "Ordered Interruption");
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                ApplyBool(a => a.hasExitTime, (a, v) => a.hasExitTime = v, "Has Exit Time");
+                var hasExitTime = GetCommonBool(a => a.hasExitTime);
+                if (hasExitTime == true)
+                    ApplyBool(a => a.hasFixedDuration, (a, v) => a.hasFixedDuration = v, "Fixed Duration");
+            }
+
+            if (GetCommonBool(a => a.hasExitTime) == true)
+                ApplyFloat(a => a.exitTime, (a, v) => a.exitTime = v, "Exit Time");
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                ApplyEnum(a => a.interruptionSource, (a, v) => a.interruptionSource = v, "Interruption Source");
+                var interruptionSource = GetCommonInterruptionSource();
+                if (interruptionSource.HasValue && interruptionSource.Value != TransitionInterruptionSource.None)
+                    ApplyBool(a => a.orderedInterruption, (a, v) => a.orderedInterruption = v, "Ordered Interruption");
+            }
+
             if (asts.All(AnimatorTransitionEditOperations.IsAnyStateTransition))
                 ApplyBool(a => a.canTransitionToSelf, (a, v) => a.canTransitionToSelf = v, "Can Transition To Self");
         }
@@ -934,13 +1503,18 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private void EnsureConditionReorderableList()
         {
             if (_reorderConditions != null && ReferenceEquals(_reorderConditions.list, _conditionBuffer))
+            {
+                ApplyReorderableListCompactChrome(_reorderConditions);
                 return;
+            }
 
             _reorderConditions = new ReorderableList(_conditionBuffer, typeof(ConditionEditRow), true, false, false, false)
             {
                 drawElementCallback = DrawConditionReorderElement,
                 elementHeightCallback = _ => ConditionRowElementHeight
             };
+
+            ApplyReorderableListCompactChrome(_reorderConditions);
 
             _reorderConditions.onReorderCallbackWithDetails = (_, oldIndex, newIndex) =>
             {
@@ -1008,17 +1582,11 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
             var rDel = new Rect(inner.xMax - pickW, y, pickW, lineH);
             var rVal = new Rect(rDel.x - gap - valueClusterW, y, valueClusterW, lineH);
-            var rPick = new Rect(rVal.x - gap - pickW, y, pickW, lineH);
-            var rMode = new Rect(inner.x, y, modeW, lineH);
-            var paramLeft = rMode.xMax + gap;
+            var rMode = new Rect(rVal.x - gap - modeW, y, modeW, lineH);
+            var rPick = new Rect(rMode.x - gap - pickW, y, pickW, lineH);
+            var paramLeft = inner.x;
             var paramW = Mathf.Max(32f, rPick.x - gap - paramLeft);
             var rParam = new Rect(paramLeft, y, paramW, lineH);
-
-            EditorGUI.BeginChangeCheck();
-            var picked = EditorGUI.Popup(rMode, modeIdx, modeLabels);
-            var modePopupChanged = EditorGUI.EndChangeCheck();
-            if (modePopupChanged && picked >= 0 && picked < allowedModes.Length)
-                newMode = allowedModes[picked];
 
             EditorGUI.BeginChangeCheck();
             newParam = EditorGUI.TextField(rParam, newParam);
@@ -1031,7 +1599,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     newMode = allowedModes[0];
             }
 
-            if (GUI.Button(rPick, new GUIContent("▾", "パラメーター一覧（/ で階層）")))
+            if (GUI.Button(rPick, new GUIContent("▾")))
             {
                 ShowParameterHierarchyMenu(rPick, menuControllers, pickedName =>
                 {
@@ -1052,6 +1620,12 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     MarkTransitionsDirty(transitions);
                 });
             }
+
+            EditorGUI.BeginChangeCheck();
+            var picked = EditorGUI.Popup(rMode, modeIdx, modeLabels);
+            var modePopupChanged = EditorGUI.EndChangeCheck();
+            if (modePopupChanged && picked >= 0 && picked < allowedModes.Length)
+                newMode = allowedModes[picked];
 
             var valueChanged = DrawConditionValueFieldRect(rVal, pType, ref newMode, ref newTh);
 
@@ -1439,17 +2013,13 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 if (_clipboardSlotFold[i])
                 {
                     EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
-                    _clipboardSlotFoldBlend[i] = EditorGUILayout.Foldout(_clipboardSlotFoldBlend[i], "ブレンド / 中断", true,
-                        FoldoutStyleNormal);
-                    if (_clipboardSlotFoldBlend[i])
-                        DrawClipboardBlendReadOnly(s);
+                    EditorGUILayout.LabelField("ブレンド / 中断", EditorStyles.label);
+                    DrawClipboardBlendReadOnly(s);
                     EditorGUILayout.EndVertical();
 
                     EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
-                    _clipboardSlotFoldConditions[i] = EditorGUILayout.Foldout(_clipboardSlotFoldConditions[i], "条件", true,
-                        FoldoutStyleNormal);
-                    if (_clipboardSlotFoldConditions[i])
-                        DrawClipboardConditionsReadOnly(s, ctrls);
+                    EditorGUILayout.LabelField("条件", EditorStyles.label);
+                    DrawClipboardConditionsReadOnly(s, ctrls);
                     EditorGUILayout.EndVertical();
                 }
 
@@ -1865,9 +2435,35 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             return false;
         }
 
+        private void RestoreRowSelection(FocusedListBucket bucket, HashSet<int> transitionIds)
+        {
+            if (transitionIds == null || transitionIds.Count == 0)
+                return;
+
+            var targetList = bucket switch
+            {
+                FocusedListBucket.Outgoing => _outgoing,
+                FocusedListBucket.Incoming => _incoming,
+                _ => null
+            };
+            if (targetList == null)
+                return;
+
+            _selectionBucket = bucket;
+            _selectedRowIndices.Clear();
+            for (var i = 0; i < targetList.Count; i++)
+            {
+                var tr = targetList[i].transition;
+                if (tr != null && transitionIds.Contains(tr.GetInstanceID()))
+                    _selectedRowIndices.Add(i);
+            }
+        }
+
         private void ApplyOrder(List<TransitionRow> bucket)
         {
             if (bucket == null || bucket.Count < 2) return;
+            var preservedStates = Selection.objects.OfType<AnimatorState>().Cast<Object>().ToList();
+            var preservedActiveState = Selection.activeObject as AnimatorState;
 
             var groupedEntries = bucket
                 .Where(e => e.transition != null && e.group != null)
@@ -1902,13 +2498,21 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
             if (selectionAfter.Count > 0)
             {
-                var arr = selectionAfter.ToArray();
+                var merged = new List<Object>();
+                merged.AddRange(preservedStates);
+                merged.AddRange(selectionAfter.Where(o => o != null));
+                var arr = merged
+                    .GroupBy(o => o.GetInstanceID())
+                    .Select(g => g.First())
+                    .ToArray();
                 Selection.objects = arr;
-                Selection.activeObject = arr[0];
+                Selection.activeObject = preservedActiveState != null ? preservedActiveState : arr[0];
                 EditorApplication.delayCall += () =>
                 {
                     Selection.objects = arr;
-                    if (arr.Length > 0)
+                    if (preservedActiveState != null)
+                        Selection.activeObject = preservedActiveState;
+                    else if (arr.Length > 0)
                         Selection.activeObject = arr[0];
                     InternalEditorUtility.RepaintAllViews();
                 };
