@@ -1306,13 +1306,17 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         }
 
         /// <summary>
-        /// 番号で選択された行。未選択時は一覧の先頭（外向きを優先）を 1 件だけ返す。
+        /// 番号で選択された行。未選択時は、Unity 上でトランジションが選ばれていれば一覧の先頭（外向きを優先）を 1 件だけ返す。
+        /// Animator ステートのみが選ばれている間は空（一覧で行を選ぶまでトランジション設定を出さない）。
         /// </summary>
         private List<TransitionRow> GetTransitionRowsForSettingsPanel()
         {
             var selected = GetSelectedRows();
             if (selected.Count > 0)
                 return selected;
+
+            if (HasAnimatorStateInSelection() && !HasAnimatorTransitionInSelection())
+                return new List<TransitionRow>();
 
             var first = TryGetFirstListedTransitionRow();
             return first != null ? new List<TransitionRow> { first } : new List<TransitionRow>();
