@@ -99,14 +99,14 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
 
         void OnGUI()
         {
-            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition, GUILayout.ExpandHeight(true));
-
-            var prevLabelWidth = EditorGUIUtility.labelWidth;
-            try
+            SamirinEditorStyleHelper.DrawWithBlueBackground(() =>
             {
-                EditorGUIUtility.labelWidth = Mathf.Max(prevLabelWidth, 10f);
-                SamirinEditorStyleHelper.DrawWithBlueBackground(() =>
+                _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition, GUILayout.ExpandHeight(true));
+
+                var prevLabelWidth = EditorGUIUtility.labelWidth;
+                try
                 {
+                    EditorGUIUtility.labelWidth = Mathf.Max(prevLabelWidth, 10f);
                     EditorGUILayout.Space(4);
                     SamirinEditorStyleHelper.DrawHelpBoxWithDefaultFont(
                         "プロジェクト内フォルダを選択し、パッケージ名・バージョンを指定して UnityPackage をエクスポートします。PackageAssetInfo はフォルダ直下に保存され、パッケージに含まれます。",
@@ -261,13 +261,13 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                     EditorGUILayout.LabelField("最終出力ディレクトリ", outDir);
                     EditorGUILayout.LabelField("ファイル名", string.IsNullOrEmpty(fileName) ? "—" : fileName);
                     EditorGUILayout.Space(4);
-                });
-            }
+                }
             finally
             {
                 EditorGUIUtility.labelWidth = prevLabelWidth;
             }
             EditorGUILayout.EndScrollView();
+            }, new Rect(0, 0, position.width, position.height));
         }
 
         void DrawUrlList()

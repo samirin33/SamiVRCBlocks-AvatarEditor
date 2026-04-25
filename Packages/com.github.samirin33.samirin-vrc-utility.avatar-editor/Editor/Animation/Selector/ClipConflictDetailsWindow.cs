@@ -127,7 +127,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 if (toRemoveEntries.Count > 0 || toRemoveClips.Count > 0 || emptyEntries.Count > 0)
                     Repaint();
                 EditorGUILayout.EndScrollView();
-            });
+            }, new Rect(0, 0, position.width, position.height));
         }
 
         private void DrawConflictEntry(ConflictEntry entry, List<ConflictEntry> toRemoveEntries, List<(ConflictTargetInfo target, AnimationClip clip)> toRemoveClips)

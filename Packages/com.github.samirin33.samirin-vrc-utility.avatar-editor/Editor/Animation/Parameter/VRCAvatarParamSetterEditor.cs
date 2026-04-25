@@ -52,7 +52,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                     EditorGUILayout.HelpBox("Animator Controller アセット（.controller）を指定してください。", MessageType.Warning);
                     return;
                 }
-            });
+            }, new Rect(0, 0, position.width, position.height));
         }
 
         void DrawReferenceLinks()

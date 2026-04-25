@@ -355,7 +355,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                     _lastSelectedClip = _pendingClipSelection;
                     _pendingClipSelection = null;
                 }
-            });
+            }, new Rect(0, 0, position.width, position.height));
         }
 
         private void OnInspectorUpdate()

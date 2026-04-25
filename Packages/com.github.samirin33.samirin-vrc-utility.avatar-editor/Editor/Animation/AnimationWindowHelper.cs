@@ -32,10 +32,35 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             if (!AnimationWindowReflection.TryGetAnimationWindowState(out var state) || state == null)
                 return false;
 
-            var rootProp = state.GetType().GetProperty("activeRootGameObject", Flags);
-            var clipProp = state.GetType().GetProperty("activeAnimationClip", Flags);
+            var stateType = state.GetType();
+            var rootProp = stateType.GetProperty("activeRootGameObject", Flags);
+            var clipProp = stateType.GetProperty("activeAnimationClip", Flags);
             activeRoot = rootProp?.GetValue(state) as GameObject;
             activeAnimationClip = clipProp?.GetValue(state) as AnimationClip;
+            return true;
+        }
+
+        /// <summary>
+        /// Animation ウィンドウのフォーカス外でも、現在のルート・クリップ・再生ヘッドの時刻（取得できた場合）を得る。クリップが取れない場合は false。
+        /// </summary>
+        public static bool TryGetAnimationWindowStateUnfocused(out GameObject activeRoot, out AnimationClip activeAnimationClip, out float time)
+        {
+            activeRoot = null;
+            activeAnimationClip = null;
+            time = 0f;
+            var window = GetAnimationWindow();
+            if (window == null) return false;
+
+            if (!AnimationWindowReflection.TryGetAnimationWindowState(out var state) || state == null)
+                return false;
+
+            var stateType = state.GetType();
+            var rootProp = stateType.GetProperty("activeRootGameObject", Flags);
+            var clipProp = stateType.GetProperty("activeAnimationClip", Flags);
+            activeRoot = rootProp?.GetValue(state) as GameObject;
+            activeAnimationClip = clipProp?.GetValue(state) as AnimationClip;
+            if (activeAnimationClip == null) return false;
+            if (!AnimationWindowReflection.TryGetStateTime(state, out time)) time = 0f;
             return true;
         }
 

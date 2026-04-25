@@ -25,7 +25,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
 
         static void OnGUI(string searchContext)
         {
-            SamirinEditorStyleHelper.DrawWithBlueBackground(() =>
+            SamirinEditorStyleHelper.DrawWithBlueBackgroundForSettingsGui(() =>
             {
                 var settings = LoadOrCreateSettings();
                 if (settings == null)

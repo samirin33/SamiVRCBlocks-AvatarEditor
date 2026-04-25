@@ -46,14 +46,14 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
 
         void OnGUI()
         {
-            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition, GUILayout.ExpandHeight(true));
-
-            var prevLabelWidth = EditorGUIUtility.labelWidth;
-            try
+            SamirinEditorStyleHelper.DrawWithBlueBackground(() =>
             {
-                EditorGUIUtility.labelWidth = Mathf.Max(EditorGUIUtility.labelWidth, 280f);
-                SamirinEditorStyleHelper.DrawWithBlueBackground(() =>
+                _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition, GUILayout.ExpandHeight(true));
+
+                var prevLabelWidth = EditorGUIUtility.labelWidth;
+                try
                 {
+                    EditorGUIUtility.labelWidth = Mathf.Max(EditorGUIUtility.labelWidth, 280f);
                     EditorGUILayout.Space(4);
                     SamirinEditorStyleHelper.DrawHelpBoxWithDefaultFont(
                         "VN3ライセンス Ver.1.10（VRC向け）に基づく利用規約の情報を編集し、指定フォルダに VN3License.txt を生成します。PDF版は vn3.org のジェネレータで作成してください。",
@@ -226,13 +226,13 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                     GUI.enabled = true;
 
                     EditorGUILayout.Space(4);
-                });
-            }
+                }
             finally
             {
                 EditorGUIUtility.labelWidth = prevLabelWidth;
             }
             EditorGUILayout.EndScrollView();
+            }, new Rect(0, 0, position.width, position.height));
         }
     }
 }

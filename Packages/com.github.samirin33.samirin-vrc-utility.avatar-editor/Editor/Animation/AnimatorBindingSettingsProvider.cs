@@ -34,7 +34,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
         public override void OnGUI(string searchContext)
         {
-            SamirinEditorStyleHelper.DrawWithBlueBackground(() =>
+            SamirinEditorStyleHelper.DrawWithBlueBackgroundForSettingsGui(() =>
             {
                 EditorGUILayout.Space(6);
                 EditorGUILayout.LabelField("Animator Binding（キーボードショートカット）", EditorStyles.boldLabel);

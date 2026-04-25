@@ -43,7 +43,8 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
         private void OnGUI()
         {
-            SamirinEditorStyleHelper.DrawWithBlueBackground(() =>
+            SamirinEditorStyleHelper.DrawWithBlueBackground(
+                () =>
             {
                 EditorGUILayout.Space(4);
                 _sourceMode = (SourceMode)EditorGUILayout.EnumPopup("対象の指定方法", _sourceMode);
@@ -62,7 +63,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                 DrawRules();
                 EditorGUILayout.Space(8);
                 DrawExecute();
-            });
+            }, new Rect(0, 0, position.width, position.height));
         }
 
         private void DrawClipArray()

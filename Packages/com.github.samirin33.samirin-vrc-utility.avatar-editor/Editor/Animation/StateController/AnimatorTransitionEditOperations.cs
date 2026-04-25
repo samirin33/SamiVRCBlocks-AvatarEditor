@@ -45,6 +45,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             public AnimatorController Controller;
             public AnimatorStateMachine StateMachine;
             public AnimatorState SourceState;
+            public AnimatorStateMachine SourceStateMachine;
+            public bool IsStateMachineNode;
             public bool IsAnyState;
             public bool IsEntry;
             public AnimatorTransitionBase Template;
@@ -55,7 +57,9 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         {
             public bool IsEntry;
             public bool IsAnyState;
+            public bool IsStateMachineNode;
             public AnimatorState SourceState;
+            public AnimatorStateMachine SourceStateMachine;
             public AnimatorStateMachine StateMachine;
             public AnimatorState DestState;
             public AnimatorStateMachine DestStateMachine;
@@ -214,6 +218,21 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 return false;
             }
 
+            if (loc.IsStateMachineNode)
+            {
+                if (loc.StateMachine == null || loc.SourceStateMachine == null)
+                    return false;
+                if (t is not AnimatorTransition at)
+                    return false;
+                var list = new System.Collections.Generic.List<AnimatorTransition>(
+                    loc.StateMachine.GetStateMachineTransitions(loc.SourceStateMachine));
+                if (!list.Remove(at))
+                    return false;
+                loc.StateMachine.SetStateMachineTransitions(loc.SourceStateMachine, list.ToArray());
+                EditorUtility.SetDirty(controller);
+                return true;
+            }
+
             if (loc.SourceState != null && t is AnimatorStateTransition st)
             {
                 loc.SourceState.RemoveTransition(st);
@@ -288,6 +307,29 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 }
             }
 
+            // 親が保持する子サブステート（StateMachine ブロック）を起点にした遷移
+            foreach (var sub in sm.stateMachines)
+            {
+                if (sub.stateMachine == null)
+                    continue;
+                foreach (var smt in sm.GetStateMachineTransitions(sub.stateMachine))
+                {
+                    if (smt != target) continue;
+                    loc = new TransitionLocation
+                    {
+                        Controller = controller,
+                        StateMachine = sm,
+                        IsStateMachineNode = true,
+                        IsAnyState = false,
+                        IsEntry = false,
+                        SourceState = null,
+                        SourceStateMachine = sub.stateMachine,
+                        Template = smt
+                    };
+                    return true;
+                }
+            }
+
             foreach (var sub in sm.stateMachines)
             {
                 if (TryFindInStateMachine(sub.stateMachine, target, controller, out loc))
@@ -300,10 +342,41 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         public static TransitionTopology BuildTopology(AnimatorTransitionBase t, TransitionLocation loc)
         {
             if (loc == null || t == null) return null;
+            if (loc.IsStateMachineNode)
+            {
+                var n = new TransitionTopology
+                {
+                    IsEntry = false,
+                    IsAnyState = false,
+                    IsStateMachineNode = true,
+                    SourceState = null,
+                    SourceStateMachine = loc.SourceStateMachine,
+                    StateMachine = loc.StateMachine
+                };
+
+                if (t is AnimatorStateTransition smAst)
+                {
+                    n.IsExit = smAst.isExit;
+                    if (!smAst.isExit)
+                    {
+                        n.DestState = smAst.destinationState;
+                        n.DestStateMachine = smAst.destinationStateMachine;
+                    }
+                }
+                else if (t is AnimatorTransition at)
+                {
+                    n.DestState = at.destinationState;
+                    n.DestStateMachine = at.destinationStateMachine;
+                }
+
+                return n;
+            }
+
             var topo = new TransitionTopology
             {
                 IsEntry = loc.IsEntry,
                 IsAnyState = loc.IsAnyState,
+                IsStateMachineNode = false,
                 SourceState = loc.SourceState,
                 StateMachine = loc.StateMachine
             };
@@ -349,6 +422,32 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 return null;
             }
 
+            if (loc.IsStateMachineNode)
+            {
+                if (loc.StateMachine == null || loc.SourceStateMachine == null)
+                    return null;
+                if (template is AnimatorStateTransition smAst)
+                {
+                    if (smAst.isExit)
+                        return loc.StateMachine.AddStateMachineExitTransition(loc.SourceStateMachine);
+                    if (smAst.destinationState != null)
+                        return loc.StateMachine.AddStateMachineTransition(loc.SourceStateMachine, smAst.destinationState);
+                    if (smAst.destinationStateMachine != null)
+                        return loc.StateMachine.AddStateMachineTransition(
+                            loc.SourceStateMachine, smAst.destinationStateMachine);
+                }
+                else if (template is AnimatorTransition at2)
+                {
+                    if (at2.destinationState != null)
+                        return loc.StateMachine.AddStateMachineTransition(loc.SourceStateMachine, at2.destinationState);
+                    if (at2.destinationStateMachine != null)
+                        return loc.StateMachine.AddStateMachineTransition(
+                            loc.SourceStateMachine, at2.destinationStateMachine);
+                }
+
+                return null;
+            }
+
             if (loc.SourceState == null || template is not AnimatorStateTransition st) return null;
 
             if (st.isExit)
@@ -383,6 +482,18 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     return topo.StateMachine.AddAnyStateTransition(topo.DestState);
                 if (topo.DestStateMachine != null)
                     return topo.StateMachine.AddAnyStateTransition(topo.DestStateMachine);
+                return null;
+            }
+
+            if (topo.IsStateMachineNode && topo.SourceStateMachine != null)
+            {
+                if (topo.IsExit)
+                    return topo.StateMachine.AddStateMachineExitTransition(topo.SourceStateMachine);
+                if (topo.DestState != null)
+                    return topo.StateMachine.AddStateMachineTransition(topo.SourceStateMachine, topo.DestState);
+                if (topo.DestStateMachine != null)
+                    return topo.StateMachine.AddStateMachineTransition(
+                        topo.SourceStateMachine, topo.DestStateMachine);
                 return null;
             }
 
@@ -563,6 +674,66 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
             Undo.RegisterCompleteObjectUndo(controller, undoLabel);
             stateMachine.entryTransitions = built.ToArray();
+            recreatedInUserOrder = Array.ConvertAll(created, x => (AnimatorTransitionBase)x);
+            return true;
+        }
+
+        /// <summary>
+        /// 同一の子サブステート（StateMachine ブロック）を起点にした遷移配列を再構築する。
+        /// </summary>
+        public static bool TryRebuildStateMachineNodeTransitionOrder(
+            AnimatorStateMachine parentStateMachine,
+            AnimatorStateMachine sourceStateMachineNode,
+            AnimatorController controller,
+            IReadOnlyList<AnimatorTransition> userOrderedSelection,
+            string undoLabel,
+            out AnimatorTransitionBase[] recreatedInUserOrder)
+        {
+            recreatedInUserOrder = null;
+            if (parentStateMachine == null || sourceStateMachineNode == null || controller == null ||
+                userOrderedSelection == null || userOrderedSelection.Count < 2)
+                return false;
+
+            var original = new List<AnimatorTransition>(
+                parentStateMachine.GetStateMachineTransitions(sourceStateMachineNode));
+            var selectedIds = new HashSet<int>(userOrderedSelection.Select(t => t.GetInstanceID()));
+            var k = userOrderedSelection.Count;
+
+            var snapshots = new (TransitionSettings settings, TransitionTopology topo)[k];
+            for (var i = 0; i < k; i++)
+            {
+                var t = userOrderedSelection[i];
+                var loc = FindTransitionLocation(t, controller);
+                if (loc == null || !loc.IsStateMachineNode || loc.StateMachine != parentStateMachine ||
+                    loc.SourceStateMachine != sourceStateMachineNode)
+                    return false;
+                snapshots[i] = (Capture(t), BuildTopology(t, loc));
+            }
+
+            var created = new AnimatorTransition[k];
+            for (var i = k - 1; i >= 0; i--)
+            {
+                var neu = CreateTransitionFromTopology(snapshots[i].topo);
+                if (neu is not AnimatorTransition at)
+                    return false;
+                ApplyOverwrite(at, snapshots[i].settings);
+                created[i] = at;
+            }
+
+            var built = new List<AnimatorTransition>(original.Count);
+            var ci = 0;
+            foreach (var tr in original)
+            {
+                if (tr != null && selectedIds.Contains(tr.GetInstanceID()))
+                    built.Add(created[ci++]);
+                else
+                    built.Add(tr);
+            }
+
+            if (ci != k) return false;
+
+            Undo.RegisterCompleteObjectUndo(controller, undoLabel);
+            parentStateMachine.SetStateMachineTransitions(sourceStateMachineNode, built.ToArray());
             recreatedInUserOrder = Array.ConvertAll(created, x => (AnimatorTransitionBase)x);
             return true;
         }

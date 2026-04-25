@@ -519,7 +519,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                 EditorGUILayout.LabelField("レイヤーのデフォルト", EditorStyles.boldLabel);
                 AnimatorDefaultSetting.LayerDefaultWeight = EditorGUILayout.Slider("Weight", AnimatorDefaultSetting.LayerDefaultWeight, 0f, 1f);
                 if (EditorGUI.EndChangeCheck()) { }
-            });
+            }, new Rect(0, 0, position.width, position.height));
         }
     }
 #endif
@@ -532,7 +532,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
         public override void OnGUI(string searchContext)
         {
-            SamirinEditorStyleHelper.DrawWithBlueBackground(() =>
+            SamirinEditorStyleHelper.DrawWithBlueBackgroundForSettingsGui(() =>
             {
                 EditorGUI.BeginChangeCheck();
 

@@ -81,7 +81,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     SamirinEditorStyleHelper.DrawWithDefaultFont(() =>
                         EditorGUILayout.HelpBox("現在: 無制限（-1）", MessageType.Info));
                 }
-            });
+            }, new Rect(0, 0, position.width, position.height));
         }
     }
 }

@@ -68,7 +68,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
                 EditorGUILayout.Space(8);
                 DrawExecute(controller);
-            });
+            }, new Rect(0, 0, position.width, position.height));
         }
 
         private AnimatorController GetTargetController()

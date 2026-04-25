@@ -46,6 +46,44 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             return prop?.GetValue(state) as AnimationClip;
         }
 
+        public static bool TryGetStateTime(object state, out float time)
+        {
+            time = 0f;
+            if (state == null) return false;
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            var t = state.GetType();
+            foreach (var name in new[] { "time", "currentTime" })
+            {
+                var prop = t.GetProperty(name, flags);
+                if (prop == null) continue;
+                if (prop.PropertyType == typeof(float))
+                {
+                    try
+                    {
+                        time = (float)prop.GetValue(state);
+                        return true;
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                }
+                if (prop.PropertyType == typeof(double))
+                {
+                    try
+                    {
+                        time = (float)(double)prop.GetValue(state);
+                        return true;
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                }
+            }
+            return false;
+        }
+
         public static IEnumerable GetActiveCurves(object state)
         {
             if (state == null) return null;
