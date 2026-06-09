@@ -60,6 +60,18 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (Selection.activeObject is not AnimatorState selectedState)
                 return false;
 
+            return TryGetSubStateDefaultActionContextForState(selectedState, out ctx);
+        }
+
+        /// <summary>
+        /// 指定ステートがレイヤールート直下ではないサブステートマシン内にあるとき、その親コンテキストを返す。
+        /// </summary>
+        private static bool TryGetSubStateDefaultActionContextForState(AnimatorState selectedState, out SubStateDefaultActionContext ctx)
+        {
+            ctx = null;
+            if (selectedState == null)
+                return false;
+
             var path = AssetDatabase.GetAssetPath(selectedState);
             if (string.IsNullOrEmpty(path))
                 return false;
@@ -77,7 +89,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 if (!TryFindContainingStateMachine(root, selectedState, out var parentStateMachine))
                     continue;
 
-                // ルート直下は「サブステート内」ではないため対象外。
                 if (ReferenceEquals(parentStateMachine, root))
                     return false;
 
@@ -230,5 +241,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
             return Selection.activeObject is AnimatorTransitionBase;
         }
+
     }
 }

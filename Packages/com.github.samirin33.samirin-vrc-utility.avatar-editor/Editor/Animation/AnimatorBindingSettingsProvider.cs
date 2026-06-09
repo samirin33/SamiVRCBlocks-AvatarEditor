@@ -22,7 +22,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             (AnimatorBinding.ShortcutIds.NewTransitionConvergeToLast, "新規トランジション - 最後へ収束 (Ctrl+Shift+T 既定)",
                 "複数ステート: 最後に選択したステートへ他から遷移を追加。1件のみ: 次に遷移先ステートを選択するとトランジション作成（ドラフト矢印は非公開 API のため2ステップ選択）。"),
             (AnimatorBinding.ShortcutIds.NewTransitionDivergeFromFirst, "新規トランジション - 先頭から拡散 (Ctrl+Shift+D 既定)",
-                "複数ステート: 最初に選択したステートから他へ遷移を追加。1件のみ: 上記と同じく次の選択で遷移先を指定。"),
+                "複数選択: 先頭が AnimatorState ならそこから他へ通常トランジション。先頭が Any State ノードならそのホストの Any State から他へ一括追加。1件のみ: 次の選択で遷移先を指定。"),
             (AnimatorBinding.ShortcutIds.NewStateAtCursor, "新規ステート作成 - エディタ中心 (Ctrl+Shift+N 既定)",
                 "Animator エディタの表示中心に New State を作成。中心座標を取得できない場合は、選択ステート付近にフォールバックして作成。")
         };

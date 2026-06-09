@@ -189,6 +189,23 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             var window = GetWindow<AnimatorTransitionManager>("AnimatorStateController");
             window.minSize = new Vector2(560f, 320f);
             window.RefreshSelection();
+            // ウィンドウ表示直後は Selection / Animator の同期が次フレームまで遅れることがあるため再読み込みする
+            var w = window;
+            EditorApplication.delayCall += () =>
+            {
+                if (w == null)
+                    return;
+                w.RefreshSelection();
+                w.Repaint();
+            };
+        }
+
+        private void OnEnable()
+        {
+            // 新規オープン・ドッキング復帰・スクリプトリロード後に、現在の選択に合わせて一覧とステート表示を更新する
+            _stateNameMultilineLastSyncedState = null;
+            RefreshSelection();
+            Repaint();
         }
 
         private void OnFocus()

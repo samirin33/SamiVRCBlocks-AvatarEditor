@@ -215,19 +215,22 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 MarkControllersDirty(asts);
             }
 
-            ApplyFloat(a => a.duration, (a, v) => a.duration = v, "Duration");
-            ApplyFloat(a => a.offset, (a, v) => a.offset = v, "Offset");
-
             using (new EditorGUILayout.HorizontalScope())
             {
                 ApplyBool(a => a.hasExitTime, (a, v) => a.hasExitTime = v, "Has Exit Time");
                 var hasExitTime = GetCommonBool(a => a.hasExitTime);
                 if (hasExitTime == true)
+                {
+                    ApplyFloat(a => a.exitTime, (a, v) => a.exitTime = v, "Exit Time");
                     ApplyBool(a => a.hasFixedDuration, (a, v) => a.hasFixedDuration = v, "Fixed Duration");
+                }
             }
 
-            if (GetCommonBool(a => a.hasExitTime) == true)
-                ApplyFloat(a => a.exitTime, (a, v) => a.exitTime = v, "Exit Time");
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                ApplyFloat(a => a.duration, (a, v) => a.duration = v, "Duration");
+                ApplyFloat(a => a.offset, (a, v) => a.offset = v, "Offset");
+            }
 
             using (new EditorGUILayout.HorizontalScope())
             {

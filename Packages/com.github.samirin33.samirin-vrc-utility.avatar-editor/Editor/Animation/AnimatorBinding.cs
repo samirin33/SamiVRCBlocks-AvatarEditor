@@ -29,7 +29,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             public const string MergedPasteAdditive = "Samirin Animator Tools/Merged Paste Additive";
             /// <summary>複数: 最後に選んだステートへ収束 / 1件: Make Transition モード</summary>
             public const string NewTransitionConvergeToLast = "Samirin Animator Tools/New Transition Converge To Last";
-            /// <summary>複数: 最初のステートから拡散 / 1件: Make Transition モード</summary>
+            /// <summary>複数: 先頭から拡散（AnimatorState または Any State）/ 1件: Make Transition モード</summary>
             public const string NewTransitionDivergeFromFirst = "Samirin Animator Tools/New Transition Diverge From First";
             /// <summary>Animator グラフの表示中心に新規ステートを作成</summary>
             public const string NewStateAtCursor = "Samirin Animator Tools/New State At Screen Center";
@@ -51,6 +51,142 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         public static void ShortcutMergedPasteAdditive()
         {
             AnimatorTransitionMultiCopy.PerformMergedPasteAdditiveFromSelection();
+        }
+
+        /// <summary>
+        /// 現在の選択に含まれる他のすべての <see cref="AnimatorState"/> から
+        /// <paramref name="destinationState"/> へ通常トランジションを追加する（収束）。
+        /// 遷移先は選択集合に含まれていてもよい（その場合は遷移元から除外される）。
+        /// </summary>
+        public static bool TryAddConvergenceTransitionsFromSelectionToState(AnimatorState destinationState)
+        {
+            if (destinationState == null)
+                return false;
+
+            var destPath = AssetDatabase.GetAssetPath(destinationState);
+            if (string.IsNullOrEmpty(destPath))
+                return false;
+
+            var states = CollectAnimatorStatesInSelectionOrder();
+            var sources = new List<AnimatorState>();
+            foreach (var s in states)
+            {
+                if (s == null || ReferenceEquals(s, destinationState))
+                    continue;
+                if (AssetDatabase.GetAssetPath(s) != destPath)
+                    continue;
+                sources.Add(s);
+            }
+
+            if (sources.Count == 0)
+            {
+                Debug.LogWarning(
+                    "[AnimatorBinding] 収束元になる AnimatorState が選択にありません（遷移先と別のステートを1つ以上選択してください）。");
+                return false;
+            }
+
+            if (!ValidateSameController(sources, out var controller))
+                return false;
+
+            if (AssetDatabase.GetAssetPath(sources[0]) != destPath)
+            {
+                Debug.LogWarning("[AnimatorBinding] 遷移先と遷移元は同一の Animator Controller 上である必要があります。");
+                return false;
+            }
+
+            Undo.RegisterCompleteObjectUndo(controller, "Create Transitions (Converge To Picked State)");
+            var added = 0;
+            foreach (var from in sources)
+            {
+                if (ReferenceEquals(from, destinationState))
+                    continue;
+                try
+                {
+                    var tr = from.AddTransition(destinationState);
+                    AnimatorDefaultSetting.ApplyDefaultsToTransitionFromScript(tr);
+                    added++;
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogException(ex);
+                }
+            }
+
+            if (added > 0)
+            {
+                EditorUtility.SetDirty(controller);
+                RepaintAnimatorControllerGraph(controller);
+            }
+            else
+                Debug.Log("[AnimatorBinding] 収束用に追加したトランジションはありませんでした。");
+
+            return true;
+        }
+
+        /// <summary>
+        /// 選択中の各 <see cref="AnimatorState"/> から <paramref name="destinationStateMachine"/> へ遷移を追加する（収束）。
+        /// </summary>
+        public static bool TryAddConvergenceTransitionsFromSelectionToStateMachine(AnimatorStateMachine destinationStateMachine)
+        {
+            if (destinationStateMachine == null)
+                return false;
+
+            var destPath = AssetDatabase.GetAssetPath(destinationStateMachine);
+            if (string.IsNullOrEmpty(destPath))
+                return false;
+
+            var states = CollectAnimatorStatesInSelectionOrder();
+            var sources = new List<AnimatorState>();
+            foreach (var s in states)
+            {
+                if (s == null)
+                    continue;
+                if (AssetDatabase.GetAssetPath(s) != destPath)
+                    continue;
+                sources.Add(s);
+            }
+
+            if (sources.Count == 0)
+            {
+                Debug.LogWarning(
+                    "[AnimatorBinding] 収束元になる AnimatorState が選択にありません（遷移元のステートを1つ以上選択してください）。");
+                return false;
+            }
+
+            if (!ValidateSameController(sources, out var controller))
+                return false;
+
+            if (AssetDatabase.GetAssetPath(sources[0]) != destPath)
+            {
+                Debug.LogWarning("[AnimatorBinding] 遷移先と遷移元は同一の Animator Controller 上である必要があります。");
+                return false;
+            }
+
+            Undo.RegisterCompleteObjectUndo(controller, "Create Transitions (Converge To SubStateMachine)");
+            var added = 0;
+            foreach (var from in sources)
+            {
+                try
+                {
+                    var tr = from.AddTransition(destinationStateMachine);
+                    AnimatorDefaultSetting.ApplyDefaultsToTransitionFromScript(tr);
+                    added++;
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogException(ex);
+                }
+            }
+
+            if (added > 0)
+            {
+                EditorUtility.SetDirty(controller);
+                RepaintAnimatorControllerGraph(controller);
+            }
+            else
+                Debug.Log("[AnimatorBinding] 収束用に追加したトランジションはありませんでした。");
+
+            return true;
         }
 
         /// <summary>
@@ -109,7 +245,9 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         }
 
         /// <summary>
-        /// 選択が1つのときは <see cref="TryNewTransitionConvergeToLast"/> と同じく遷移先選択モード。2つ以上なら先頭ステートから他へ拡散するトランジションを追加。
+        /// 選択が1つのときは <see cref="TryNewTransitionConvergeToLast"/> と同じく遷移先選択モード。
+        /// 2つ以上で先頭が <see cref="AnimatorState"/> なら先頭から他へ通常トランジションを拡散。
+        /// 先頭が Any State グラフノードなら、そのホストの Any State から 2 番目以降へ <see cref="AnimatorStateMachine.AddAnyStateTransition"/> で拡散。
         /// </summary>
         public static bool TryNewTransitionDivergeFromFirst()
         {
@@ -215,18 +353,15 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     AnimatorStateTransition tr;
                     if (toExit)
                     {
-                        if (HasExitTransitionFromState(from)) continue;
                         tr = from.AddExitTransition();
                     }
                     else if (destSm != null)
                     {
-                        if (HasTransitionToStateMachine(from, destSm)) continue;
                         tr = from.AddTransition(destSm);
                     }
                     else
                     {
                         if (from == destState) continue;
-                        if (HasSimpleTransitionToState(from, destState)) continue;
                         tr = from.AddTransition(destState);
                     }
 
@@ -245,22 +380,27 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 RepaintAnimatorControllerGraph(controller);
             }
             else
-                Debug.Log("[AnimatorBinding] 収束用に追加したトランジションはありません（既に存在するか、条件を満たしませんでした）。");
+                Debug.Log("[AnimatorBinding] 収束用に追加したトランジションはありません（条件を満たしませんでした）。");
 
             return true;
         }
 
         /// <summary>
-        /// <see cref="Selection.objects"/> の<strong>先頭</strong>を遷移元ステート、2番目以降を遷移先として拡散。
+        /// <see cref="Selection.objects"/> の<strong>先頭</strong>を遷移元（<see cref="AnimatorState"/> または Any State ノード）、2番目以降を遷移先として拡散。
         /// </summary>
         private static bool TryAddTransitionsDivergeFromFirstFromSelectionObjects()
         {
             var objs = Selection.objects;
             if (objs == null || objs.Length < 2) return false;
 
+            if (AnimatorAnyStateGraphSelectionHelper.IsAnyStateGraphNode(objs[0]) &&
+                AnimatorAnyStateGraphSelectionHelper.TryResolveBestHostStateMachineFromAnyStateGraphNode(objs[0], out var anyHost) &&
+                anyHost != null)
+                return TryAddAnyStateTransitionsDivergeFromSelection(anyHost, objs);
+
             if (!(objs[0] is AnimatorState first))
             {
-                Debug.LogWarning("[AnimatorBinding] 拡散では、最初に遷移元の AnimatorState を選択してください。");
+                Debug.LogWarning("[AnimatorBinding] 拡散では、最初に遷移元の AnimatorState または Any State を選択してください。");
                 return true;
             }
 
@@ -293,18 +433,15 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     AnimatorStateTransition tr;
                     if (toExit)
                     {
-                        if (HasExitTransitionFromState(first)) continue;
                         tr = first.AddExitTransition();
                     }
                     else if (destSm != null)
                     {
-                        if (HasTransitionToStateMachine(first, destSm)) continue;
                         tr = first.AddTransition(destSm);
                     }
                     else
                     {
                         if (destState == first) continue;
-                        if (HasSimpleTransitionToState(first, destState)) continue;
                         tr = first.AddTransition(destState);
                     }
 
@@ -323,7 +460,77 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 RepaintAnimatorControllerGraph(controller);
             }
             else
-                Debug.Log("[AnimatorBinding] 拡散用に追加したトランジションはありません（既に存在するか、条件を満たしませんでした）。");
+                Debug.Log("[AnimatorBinding] 拡散用に追加したトランジションはありません（条件を満たしませんでした）。");
+
+            return true;
+        }
+
+        /// <summary>
+        /// 先頭が Any State ノード、2番目以降が遷移先のとき、ホストの Any State から各遷移先へ拡散。
+        /// </summary>
+        private static bool TryAddAnyStateTransitionsDivergeFromSelection(AnimatorStateMachine host, Object[] objs)
+        {
+            if (host == null || objs == null || objs.Length < 2) return true;
+
+            var path = AssetDatabase.GetAssetPath(host);
+            if (string.IsNullOrEmpty(path))
+                return true;
+
+            var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(path);
+            if (controller == null)
+                return true;
+
+            Undo.RegisterCompleteObjectUndo(controller, "Create Any State Transitions (Diverge From First)");
+            var added = 0;
+            for (var i = 1; i < objs.Length; i++)
+            {
+                if (!AnimatorGraphDestinationResolver.TryResolve(objs[i], out var destState, out var destSm, out var toExit))
+                {
+                    Debug.LogWarning($"[AnimatorBinding] 遷移先を認識できませんでした: {(objs[i] != null ? objs[i].name : "(null)")}");
+                    continue;
+                }
+
+                if (toExit)
+                {
+                    Debug.LogWarning("[AnimatorBinding] Any State から Exit ノードへのトランジションは Unity の Animator では作成できません。");
+                    continue;
+                }
+
+                if (!ValidateDestinationSameControllerAsset(path, destState, destSm, false))
+                {
+                    Debug.LogWarning("[AnimatorBinding] 遷移先は同じ Animator Controller アセット上である必要があります。");
+                    continue;
+                }
+
+                try
+                {
+                    AnimatorStateTransition tr;
+                    if (destSm != null)
+                    {
+                        if (destSm == host) continue;
+                        tr = host.AddAnyStateTransition(destSm);
+                    }
+                    else
+                    {
+                        tr = host.AddAnyStateTransition(destState);
+                    }
+
+                    AnimatorDefaultSetting.ApplyDefaultsToTransitionFromScript(tr);
+                    added++;
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogException(ex);
+                }
+            }
+
+            if (added > 0)
+            {
+                EditorUtility.SetDirty(controller);
+                AnimatorTransitionPickSession.RefreshAnimatorGraphAfterTransitionEdit(controller, host);
+            }
+            else
+                Debug.Log("[AnimatorBinding] Any State 拡散で追加したトランジションはありません（条件を満たしませんでした）。");
 
             return true;
         }
@@ -341,7 +548,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             {
                 var from = states[i];
                 if (from == last) continue;
-                if (HasSimpleTransitionToState(from, last)) continue;
                 try
                 {
                     var tr = from.AddTransition(last);
@@ -360,7 +566,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 RepaintAnimatorControllerGraph(controller);
             }
             else
-                Debug.Log("[AnimatorBinding] 収束用に追加したトランジションはありません（既に存在するか、最後以外が同一ステートのみです）。");
+                Debug.Log("[AnimatorBinding] 収束用に追加したトランジションはありません（最後と遷移元がすべて同一、または追加に失敗しました）。");
 
             return true;
         }
@@ -378,7 +584,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             {
                 var to = states[i];
                 if (to == first) continue;
-                if (HasSimpleTransitionToState(first, to)) continue;
                 try
                 {
                     var tr = first.AddTransition(to);
@@ -397,7 +602,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 RepaintAnimatorControllerGraph(controller);
             }
             else
-                Debug.Log("[AnimatorBinding] 拡散用に追加したトランジションはありません（既に存在するか、先頭と同一のみです）。");
+                Debug.Log("[AnimatorBinding] 拡散用に追加したトランジションはありません（先頭と遷移先がすべて同一、または追加に失敗しました）。");
 
             return true;
         }
@@ -409,29 +614,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 return AssetDatabase.GetAssetPath(destState) == controllerAssetPath;
             if (destSm != null)
                 return AssetDatabase.GetAssetPath(destSm) == controllerAssetPath;
-            return false;
-        }
-
-        private static bool HasTransitionToStateMachine(AnimatorState from, AnimatorStateMachine sm)
-        {
-            if (from == null || sm == null) return false;
-            foreach (var tr in from.transitions)
-            {
-                if (tr.isExit) continue;
-                if (tr.destinationStateMachine == sm) return true;
-            }
-
-            return false;
-        }
-
-        private static bool HasExitTransitionFromState(AnimatorState from)
-        {
-            if (from == null) return false;
-            foreach (var tr in from.transitions)
-            {
-                if (tr.isExit) return true;
-            }
-
             return false;
         }
 
@@ -470,20 +652,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             }
 
             return true;
-        }
-
-        /// <summary>同一レイヤー内のステート→ステートの既存遷移があるか（サブステートマシン宛は別扱い）。</summary>
-        private static bool HasSimpleTransitionToState(AnimatorState from, AnimatorState to)
-        {
-            if (from == null || to == null) return false;
-            foreach (var tr in from.transitions)
-            {
-                if (tr.isExit) continue;
-                if (tr.destinationStateMachine != null) continue;
-                if (tr.destinationState == to) return true;
-            }
-
-            return false;
         }
 
         public static bool TryCreateNewStateAtCursor()

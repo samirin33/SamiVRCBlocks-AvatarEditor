@@ -253,6 +253,66 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                         break;
                 }
             }
+
+            ApplyDefaultRowSelectionWhenUnityHasMultipleTransitionsSelected();
+        }
+
+        /// <summary>
+        /// Unity で <see cref="AnimatorTransitionBase"/> を複数選択しているとき、
+        /// 外向き／内向き一覧のうち該当する行をすべて選択する（未操作時の既定）。
+        /// </summary>
+        private void ApplyDefaultRowSelectionWhenUnityHasMultipleTransitionsSelected()
+        {
+            var selectedTransitionIds = new HashSet<int>();
+            foreach (var o in Selection.objects)
+            {
+                if (o is AnimatorTransitionBase tr)
+                    selectedTransitionIds.Add(tr.GetInstanceID());
+            }
+
+            foreach (var id in Selection.instanceIDs)
+            {
+                if (EditorUtility.InstanceIDToObject(id) is AnimatorTransitionBase tr2)
+                    selectedTransitionIds.Add(tr2.GetInstanceID());
+            }
+
+            if (selectedTransitionIds.Count < 2)
+                return;
+
+            var outgoingHits = new List<int>();
+            for (var i = 0; i < _outgoing.Count; i++)
+            {
+                var t = _outgoing[i].transition;
+                if (t != null && selectedTransitionIds.Contains(t.GetInstanceID()))
+                    outgoingHits.Add(i);
+            }
+
+            var incomingHits = new List<int>();
+            for (var i = 0; i < _incoming.Count; i++)
+            {
+                var t = _incoming[i].transition;
+                if (t != null && selectedTransitionIds.Contains(t.GetInstanceID()))
+                    incomingHits.Add(i);
+            }
+
+            if (outgoingHits.Count == 0 && incomingHits.Count == 0)
+                return;
+
+            _selectedRowIndices.Clear();
+            _lastConditionBufferSignature = "";
+
+            if (incomingHits.Count == 0 || outgoingHits.Count >= incomingHits.Count)
+            {
+                _selectionBucket = FocusedListBucket.Outgoing;
+                foreach (var i in outgoingHits)
+                    _selectedRowIndices.Add(i);
+            }
+            else
+            {
+                _selectionBucket = FocusedListBucket.Incoming;
+                foreach (var i in incomingHits)
+                    _selectedRowIndices.Add(i);
+            }
         }
 
         private static void CollectIncomingToState(

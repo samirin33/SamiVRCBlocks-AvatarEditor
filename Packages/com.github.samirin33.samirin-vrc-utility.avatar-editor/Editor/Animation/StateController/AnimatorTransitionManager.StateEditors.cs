@@ -16,6 +16,15 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 {
     public sealed partial class AnimatorTransitionManager : EditorWindow
     {
+        /// <summary>ステート名編集で複数行（実際の改行 <c>\n</c>）入力を許可するか。</summary>
+        private bool _stateNameMultilineEditEnabled;
+
+        /// <summary>
+        /// 最後にステート名の改行トグル同期を行ったステート。
+        /// 選択が変わったときだけ <see cref="_stateNameMultilineEditEnabled"/> を名前に合わせる。
+        /// </summary>
+        private AnimatorState _stateNameMultilineLastSyncedState;
+
         // State / SubState インスペクタ
         private void DrawSelectedStateEditor()
         {
@@ -30,11 +39,45 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (controller == null)
                 return;
 
+            if (!ReferenceEquals(state, _stateNameMultilineLastSyncedState))
+            {
+                _stateNameMultilineLastSyncedState = state;
+                var nameForSync = state.name;
+                if (!string.IsNullOrEmpty(nameForSync) &&
+                    nameForSync.IndexOfAny(new[] { '\r', '\n' }) >= 0)
+                    _stateNameMultilineEditEnabled = true;
+            }
+
             EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
             EditorGUILayout.LabelField("ステート設定", EditorStyles.label);
 
             var changed = false;
-            var newName = EditorGUILayout.TextField("ステート名", state.name);
+
+            string newName;
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.PrefixLabel("ステート名");
+                if (_stateNameMultilineEditEnabled)
+                {
+                    newName = EditorGUILayout.TextArea(
+                        state.name,
+                        GUILayout.MinHeight(EditorGUIUtility.singleLineHeight * 3f),
+                        GUILayout.ExpandWidth(true));
+                }
+                else
+                {
+                    newName = EditorGUILayout.TextField(state.name, GUILayout.ExpandWidth(true));
+                }
+
+                _stateNameMultilineEditEnabled = GUILayout.Toggle(
+                    _stateNameMultilineEditEnabled,
+                    new GUIContent(
+                        "改行",
+                        "有効にすると複数行入力できます。改行はステート名に実際の改行文字（\\n）として保存されます。"),
+                    EditorStyles.miniButton,
+                    GUILayout.Width(44f));
+            }
+
             var newMotion = (Motion)EditorGUILayout.ObjectField("AnimationClip / Motion", state.motion, typeof(Motion), false);
 
 
