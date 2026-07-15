@@ -12,8 +12,6 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         const string EditorPrefsKeyOverwrite = "Samirin.VRCUtility.AvatarEditor.PackageExporter.Overwrite";
         const string EditorPrefsKeyIncludeInstaller = "Samirin.VRCUtility.AvatarEditor.PackageExporter.IncludeInstaller";
 
-        const string InstallerFolderPath = "Assets/SamirinVRCUtility Avatar Installer";
-
         string _sourceFolderPath = "";
         DefaultAsset _sourceFolderAsset;
         string _packageName = "";

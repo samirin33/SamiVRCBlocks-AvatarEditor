@@ -80,6 +80,34 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         }
 
         /// <summary>
+        /// ディスク上のファイルからアセットパスを列挙する（.meta は除く）。
+        /// AssetDatabase への未登録直後でも ExportPackage 用パスを集められる。
+        /// </summary>
+        static List<string> GetDiskAssetPathsInFolder(string assetFolderPath)
+        {
+            var list = new List<string>();
+            if (string.IsNullOrEmpty(assetFolderPath)) return list;
+
+            var normalized = assetFolderPath.Replace("\\", "/").TrimEnd('/');
+            if (!normalized.StartsWith("Assets/") && normalized != "Assets")
+                return list;
+
+            var fullPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", normalized));
+            if (!Directory.Exists(fullPath)) return list;
+
+            var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            foreach (var file in Directory.GetFiles(fullPath, "*", SearchOption.AllDirectories))
+            {
+                if (file.EndsWith(".meta", System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var relative = file.Substring(projectRoot.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                list.Add(relative.Replace("\\", "/"));
+            }
+
+            return list;
+        }
+
+        /// <summary>
         /// UnityPackage をエクスポートする。
         /// 出力前に PackageAssetInfo をフォルダ直下に保存し、そのフォルダごとパッケージに含める。
         /// </summary>
@@ -115,13 +143,47 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
             var paths = GetAssetPathsInFolder(sourceAssetFolder);
             if (includeInstallerFolder)
             {
-                const string installerFolder = "Assets/SamirinVRCUtility Avatar Installer";
+                // Assets 上の Installer は不足しがち（初回展開後にスクリプトだけ消える等）なので、
+                // エクスポート直前に Packages 内 ZIP から強制再展開して中身を揃える。
+                if (!InstollerImport.EnsureInstallerExtracted(force: true))
+                {
+                    Debug.LogError(
+                        "[PackageExporter] SamirinVRCUtility Avatar Installer の展開に失敗しました。" +
+                        $" Packages 内の {InstollerImport.ZipFileName} を確認してください。");
+                    return null;
+                }
+
+                var installerFolder = InstollerImport.InstallerFolderAssetPath;
                 var installerPaths = GetAssetPathsInFolder(installerFolder);
+                // FindAssets が取りこぼす場合に備え、ディスク上のファイルもアセットパスとして追加する
+                foreach (var diskPath in GetDiskAssetPathsInFolder(installerFolder))
+                {
+                    if (!installerPaths.Contains(diskPath))
+                        installerPaths.Add(diskPath);
+                }
+
+                if (installerPaths.Count == 0)
+                {
+                    Debug.LogError("[PackageExporter] Installer フォルダに含めるアセットが見つかりません: " + installerFolder);
+                    return null;
+                }
+
+                var editorScriptPath = (installerFolder + "/" + InstollerImport.InstallerEditorScriptFileName).Replace("\\", "/");
+                if (!installerPaths.Contains(editorScriptPath))
+                {
+                    Debug.LogError(
+                        "[PackageExporter] Installer 内のスクリプトが含まれていません: " + editorScriptPath +
+                        " — ZIP の内容を確認してください。");
+                    return null;
+                }
+
                 var set = new HashSet<string>(paths);
                 foreach (var p in installerPaths)
                 {
                     if (!set.Contains(p)) { set.Add(p); paths.Add(p); }
                 }
+
+                Debug.Log($"[PackageExporter] Installer を含めます ({installerPaths.Count} assets): " + string.Join(", ", installerPaths));
             }
             if (paths.Count == 0)
             {

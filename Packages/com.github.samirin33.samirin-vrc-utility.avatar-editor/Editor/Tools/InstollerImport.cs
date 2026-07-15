@@ -9,7 +9,10 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
     [InitializeOnLoad]
     public static class InstollerImport
     {
-        private const string ZipFileName = "SamirinVRCUtility Avatar Installer.zip";
+        public const string ZipFileName = "SamirinVRCUtility Avatar Installer.zip";
+        public const string InstallerFolderAssetPath = "Assets/SamirinVRCUtility Avatar Installer";
+        public const string InstallerEditorScriptFileName = "SamirinVRCUtilityAvatarInstallerEditor.cs";
+
         private static string EditorPrefsKey => "SamirinVRCUtility.InstallerImported." + Application.dataPath;
 
         static InstollerImport()
@@ -19,13 +22,20 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
 
         private static void OnDelayCall()
         {
-            ExtractInstallerIfNeeded();
+            EnsureInstallerExtracted(force: false);
         }
 
-        private static void ExtractInstallerIfNeeded()
+        /// <summary>
+        /// Packages 内の ZIP を Assets に展開する。
+        /// force=false でも、必須スクリプトが欠ける場合は再展開する。
+        /// </summary>
+        /// <returns>展開に成功した、または既に揃っている場合は true。</returns>
+        public static bool EnsureInstallerExtracted(bool force = false)
         {
-            if (EditorPrefs.GetBool(EditorPrefsKey, false)) return;
-            ExtractInstaller();
+            if (!force && EditorPrefs.GetBool(EditorPrefsKey, false) && IsInstallerCompleteOnDisk())
+                return true;
+
+            return ExtractInstaller(force || !IsInstallerCompleteOnDisk());
         }
 
         [MenuItem("Tools/SamirinVRCUtility Avatar Installer Reimport")]
@@ -34,32 +44,43 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
             ExtractInstaller(force: true);
         }
 
-        private static void ExtractInstaller(bool force = false)
+        private static bool IsInstallerCompleteOnDisk()
+        {
+            var editorScript = Path.Combine(Application.dataPath, "SamirinVRCUtility Avatar Installer", InstallerEditorScriptFileName);
+            return File.Exists(editorScript);
+        }
+
+        private static string GetInstallerZipPath()
         {
             string projectPath = Directory.GetParent(Application.dataPath)?.FullName;
-            if (string.IsNullOrEmpty(projectPath)) return;
-
-            string zipPath = Path.Combine(projectPath, "Packages",
+            if (string.IsNullOrEmpty(projectPath)) return null;
+            return Path.Combine(projectPath, "Packages",
                 "com.github.samirin33.samirin-vrc-utility.avatar-editor", ZipFileName);
-            string assetsPath = Application.dataPath;
+        }
 
-            if (!File.Exists(zipPath))
+        private static bool ExtractInstaller(bool force = false)
+        {
+            string zipPath = GetInstallerZipPath();
+            if (string.IsNullOrEmpty(zipPath) || !File.Exists(zipPath))
             {
                 if (force)
                     Debug.LogWarning($"[SamirinVRCUtility] {ZipFileName} が見つかりません: {zipPath}");
-                return;
+                return false;
             }
 
             try
             {
-                ExtractZipToDirectory(zipPath, assetsPath);
+                ExtractZipToDirectory(zipPath, Application.dataPath);
                 EditorPrefs.SetBool(EditorPrefsKey, true);
-                AssetDatabase.Refresh();
+                AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+                AssetDatabase.ImportAsset(InstallerFolderAssetPath, ImportAssetOptions.ImportRecursive);
                 Debug.Log($"[SamirinVRCUtility] {ZipFileName} を Assets に解凍して配置しました。");
+                return IsInstallerCompleteOnDisk();
             }
             catch (System.Exception ex)
             {
                 Debug.LogError($"[SamirinVRCUtility] ZIP の解凍に失敗しました: {ex.Message}");
+                return false;
             }
         }
 
