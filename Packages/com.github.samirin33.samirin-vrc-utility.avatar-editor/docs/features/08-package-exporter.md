@@ -1,8 +1,8 @@
-# Package Exporter（PacageExporter）
+# Package Exporter（PackageExporter）
 
 ## 概要
 
-**PacageExporter** は、プロジェクト内の指定フォルダ（`Assets/` 以下）を UnityPackage（`.unitypackage`）としてバージョン更新情報をつけて素早くエクスポートできます。
+**PackageExporter** は、プロジェクト内の指定フォルダ（`Assets/` 以下）を UnityPackage（`.unitypackage`）としてバージョン更新情報をつけて素早くエクスポートできます。
 パッケージのバージョン更新情報は `PackageAssetInfo.json` で管理し、エクスポート前にソースフォルダ直下に保存してからパッケージに含めます。Package Exporter ウィンドウ（メニューから開くエディタ）から利用されます。
 
 ## 開き方
@@ -14,14 +14,14 @@
 
 1. 配布したい **ソースフォルダ**（Assets 内）をオブジェクトフィールドまたはパスで指定する。
 2. **パッケージ名** と **バージョン**（Major / Minor / Patch）を入力する。
-3. 作成・配布予定のギミックにsamirin33 VRC Utility関連コンポーネントが含まれる場合は**パッケージに「SamirinVRCUtility Avatar Installer」を含める**を有効にしてください。
+3. 作成・配布予定のギミックにsamirin33 VRC Utility関連コンポーネントが含まれる場合は**パッケージに「AvatarInstaller」を含める**を有効にしてください。
 4. PackageAssetInfo の作者・説明・Releases・関連URL を必要に応じて編集する。
 5. **出力ディレクトリ** を指定し、必要なら「既存ファイルを上書きする」にチェックを入れる。
 6. 「エクスポート !」を押すと、`{パッケージ名}_ver{バージョン}.unitypackage` が出力され、成功時はエクスプローラーで開かれる。
 
 VN3 ライセンスを同じ出力先に生成したい場合は「VN3ライセンスを編集／指定フォルダに生成」から VN3 License Generator を開き、出力先は Package Exporter と共有されます。
 
-## PacageExporter の API・役割
+## PackageExporter の API・役割
 
 ### 定数
 
@@ -46,7 +46,7 @@ VN3 ライセンスを同じ出力先に生成したい場合は「VN3ライセ�
 - `version` — バージョン（x.x.x 形式）
 - `outputDirectory` — 出力先ディレクトリ（フルパス）
 - `overwrite` — 既存ファイルを上書きするか
-- `includeInstallerFolder` — `Assets/SamirinVRCUtility Avatar Installer` をパッケージに含めるか
+- `includeInstallerFolder` — `Assets/AvatarInstaller` をパッケージに含めるか
 
 戻り値は成功時は出力 `.unitypackage` のフルパス、失敗時は `null`。
 

@@ -11,6 +11,8 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         const string EditorPrefsKeyOutputDirectory = "Samirin.VRCUtility.AvatarEditor.PackageExporter.OutputDirectory";
         const string EditorPrefsKeyOverwrite = "Samirin.VRCUtility.AvatarEditor.PackageExporter.Overwrite";
         const string EditorPrefsKeyIncludeInstaller = "Samirin.VRCUtility.AvatarEditor.PackageExporter.IncludeInstaller";
+        const string EditorPrefsKeyIncludeBoothManagerInstaller =
+            "Samirin.VRCUtility.AvatarEditor.PackageExporter.IncludeBoothManagerInstaller";
 
         string _sourceFolderPath = "";
         DefaultAsset _sourceFolderAsset;
@@ -19,6 +21,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         string _outputDirectory = "";
         bool _overwrite = true;
         bool _includeInstaller = true;
+        bool _includeBoothManagerInstaller = true;
 
         PackageAssetInfo _assetInfo;
         Vector2 _scrollPosition;
@@ -37,6 +40,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
             _outputDirectory = EditorPrefs.GetString(EditorPrefsKeyOutputDirectory, "");
             _overwrite = EditorPrefs.GetBool(EditorPrefsKeyOverwrite, false);
             _includeInstaller = EditorPrefs.GetBool(EditorPrefsKeyIncludeInstaller, false);
+            _includeBoothManagerInstaller = EditorPrefs.GetBool(EditorPrefsKeyIncludeBoothManagerInstaller, true);
             if (!string.IsNullOrEmpty(_sourceFolderPath))
                 LoadAssetInfoFromFolder();
         }
@@ -77,14 +81,14 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         PackageAssetInfo.ReleaseInfo GetLatestReleaseFromJsonFile()
         {
             if (string.IsNullOrEmpty(_sourceFolderPath)) return null;
-            var fileInfo = PacageExporter.LoadAssetInfo(_sourceFolderPath);
+            var fileInfo = PackageExporter.LoadAssetInfo(_sourceFolderPath);
             if (fileInfo?.releases == null || fileInfo.releases.Length == 0) return null;
             return fileInfo.releases[0];
         }
 
         void LoadAssetInfoFromFolder()
         {
-            _assetInfo = PacageExporter.LoadAssetInfo(_sourceFolderPath);
+            _assetInfo = PackageExporter.LoadAssetInfo(_sourceFolderPath);
             if (_assetInfo == null)
                 _assetInfo = new PackageAssetInfo { name = _packageName, version = GetVersionString(), urls = new PackageAssetInfo.UrlInfo[0], releases = new PackageAssetInfo.ReleaseInfo[0] };
             else
@@ -158,7 +162,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                     DrawVersionIntField("Patch", ref _versionPatch);
                     if (GUILayout.Button("現在のバージョン", GUILayout.ExpandWidth(false)))
                     {
-                        var fromFile = PacageExporter.LoadAssetInfo(_sourceFolderPath);
+                        var fromFile = PackageExporter.LoadAssetInfo(_sourceFolderPath);
                         var ver = fromFile?.version;
                         if (string.IsNullOrEmpty(ver) && _assetInfo != null) ver = _assetInfo.version;
                         if (!string.IsNullOrEmpty(ver))
@@ -183,10 +187,23 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                     EditorGUILayout.Space(6);
 
                     // Installer フォルダを含めるか（EditorPrefs）
-                    _includeInstaller = EditorGUILayout.ToggleLeft($"パッケージに「SamirinVRCUtility Avatar Installer」を含める", _includeInstaller);
+                    _includeInstaller = EditorGUILayout.ToggleLeft("パッケージに「AvatarInstaller」を含める", _includeInstaller);
                     SamirinEditorStyleHelper.DrawHelpBoxWithDefaultFont(
                         "有効にするとアセットを導入した人もsamirin33 VRC Utility関連のスクリプトが使用できるようになります。",
                         MessageType.Info);
+
+                    // Assets/samirin33 配下のときだけ BoothManager インストーラ同梱オプションを表示
+                    if (PackageExporter.IsUnderSamirin33Folder(_sourceFolderPath))
+                    {
+                        EditorGUILayout.Space(4);
+                        _includeBoothManagerInstaller = EditorGUILayout.ToggleLeft(
+                            "パッケージに「SamirinBoothManager」インストーラを含める",
+                            _includeBoothManagerInstaller);
+                        SamirinEditorStyleHelper.DrawHelpBoxWithDefaultFont(
+                            "有効にすると、導入時に GitHub から SamirinBoothManager を自動取得するインストーラが同梱されます。",
+                            MessageType.Info);
+                    }
+
                     EditorGUILayout.BeginHorizontal();
                     if (GUILayout.Button("vn3.org を開く", GUILayout.ExpandWidth(false)))
                         Application.OpenURL("https://www.vn3.org/");
@@ -243,8 +260,19 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                         EditorPrefs.SetString(EditorPrefsKeyOutputDirectory, _outputDirectory);
                         EditorPrefs.SetBool(EditorPrefsKeyOverwrite, _overwrite);
                         EditorPrefs.SetBool(EditorPrefsKeyIncludeInstaller, _includeInstaller);
+                        EditorPrefs.SetBool(EditorPrefsKeyIncludeBoothManagerInstaller, _includeBoothManagerInstaller);
 
-                        var result = PacageExporter.ExportPackage(_sourceFolderPath, _assetInfo, _packageName, versionStr, _outputDirectory, _overwrite, _includeInstaller);
+                        var includeBooth = PackageExporter.IsUnderSamirin33Folder(_sourceFolderPath)
+                            && _includeBoothManagerInstaller;
+                        var result = PackageExporter.ExportPackage(
+                            _sourceFolderPath,
+                            _assetInfo,
+                            _packageName,
+                            versionStr,
+                            _outputDirectory,
+                            _overwrite,
+                            _includeInstaller,
+                            includeBooth);
                         if (result != null)
                             EditorUtility.RevealInFinder(result);
                         else if (System.IO.File.Exists(System.IO.Path.Combine(_outputDirectory, $"{_packageName}_ver{versionStr}.unitypackage")))

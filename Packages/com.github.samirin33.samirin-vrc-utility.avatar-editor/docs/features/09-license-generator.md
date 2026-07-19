@@ -45,5 +45,5 @@
 
 ## 関連
 
-- [Package Exporter（PacageExporter）](08-package-exporter.md) — 出力先を共有し、同じフォルダにパッケージとライセンスを出力する連携が可能。
+- [Package Exporter（PackageExporter）](08-package-exporter.md) — 出力先を共有し、同じフォルダにパッケージとライセンスを出力する連携が可能。
 - [VN3ライセンス](https://www.vn3.org/) — 公式サイト・ジェネレータ。
