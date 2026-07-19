@@ -9,6 +9,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
     public class PackageExporterWindow : EditorWindow
     {
         const string EditorPrefsKeyOutputDirectory = "Samirin.VRCUtility.AvatarEditor.PackageExporter.OutputDirectory";
+        const string EditorPrefsKeySourceFolder = "Samirin.VRCUtility.AvatarEditor.PackageExporter.SourceFolder";
         const string EditorPrefsKeyOverwrite = "Samirin.VRCUtility.AvatarEditor.PackageExporter.Overwrite";
         const string EditorPrefsKeyIncludeInstaller = "Samirin.VRCUtility.AvatarEditor.PackageExporter.IncludeInstaller";
         const string EditorPrefsKeyIncludeBoothManagerInstaller =
@@ -24,9 +25,11 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         bool _includeBoothManagerInstaller = true;
 
         PackageAssetInfo _assetInfo;
+        UnityEngine.Object _boothAssetInfo;
         Vector2 _scrollPosition;
         bool _urlsFoldout = true;
         bool _releasesFoldout = true;
+        bool _relatedFoldersFoldout = true;
 
         [MenuItem("samirin33 Editor Tools/Package Exporter", false, 100)]
         public static void Open()
@@ -41,8 +44,76 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
             _overwrite = EditorPrefs.GetBool(EditorPrefsKeyOverwrite, false);
             _includeInstaller = EditorPrefs.GetBool(EditorPrefsKeyIncludeInstaller, false);
             _includeBoothManagerInstaller = EditorPrefs.GetBool(EditorPrefsKeyIncludeBoothManagerInstaller, true);
-            if (!string.IsNullOrEmpty(_sourceFolderPath))
-                LoadAssetInfoFromFolder();
+
+            // 最後に編集していた配布フォルダを復元
+            if (string.IsNullOrEmpty(_sourceFolderPath))
+                _sourceFolderPath = EditorPrefs.GetString(EditorPrefsKeySourceFolder, "");
+
+            RestoreSourceFolderSelection();
+        }
+
+        void RestoreSourceFolderSelection()
+        {
+            if (string.IsNullOrEmpty(_sourceFolderPath))
+                return;
+
+            _sourceFolderPath = _sourceFolderPath.Replace("\\", "/").TrimEnd('/');
+            if (!AssetDatabase.IsValidFolder(_sourceFolderPath))
+            {
+                _sourceFolderAsset = null;
+                return;
+            }
+
+            _sourceFolderAsset = AssetDatabase.LoadAssetAtPath<DefaultAsset>(_sourceFolderPath);
+            LoadAssetInfoFromFolder();
+            ResolveBoothAssetInfo();
+        }
+
+        void ResolveBoothAssetInfo()
+        {
+            if (!PackageExporter.IsUnderSamirin33Folder(_sourceFolderPath))
+            {
+                _boothAssetInfo = null;
+                return;
+            }
+            _boothAssetInfo = PackageExporter.FindBoothAssetInfoForFolder(_sourceFolderPath);
+        }
+
+        void ApplyFromBoothAssetInfo()
+        {
+            if (!PackageExporter.IsUnderSamirin33Folder(_sourceFolderPath))
+                return;
+
+            if (_assetInfo == null)
+                _assetInfo = new PackageAssetInfo();
+
+            if (_boothAssetInfo == null)
+                _boothAssetInfo = PackageExporter.FindBoothAssetInfoForFolder(_sourceFolderPath);
+
+            if (!PackageExporter.TryApplyFromBoothAssetInfo(
+                    _boothAssetInfo, _assetInfo, out var packageName, out var version))
+            {
+                EditorUtility.DisplayDialog(
+                    "Package Exporter",
+                    "SamirinBoothAssetInfo が見つからないか、読み取れませんでした。\n" +
+                    "配布フォルダに対応する Asset Info を指定してください。",
+                    "OK");
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(packageName))
+                _packageName = packageName;
+            if (!string.IsNullOrEmpty(version))
+                ParseVersion(version, out _versionMajor, out _versionMinor, out _versionPatch);
+
+            _urlsFoldout = true;
+            _releasesFoldout = true;
+        }
+
+        void PersistSourceFolder(string path)
+        {
+            _sourceFolderPath = (path ?? "").Replace("\\", "/").TrimEnd('/');
+            EditorPrefs.SetString(EditorPrefsKeySourceFolder, _sourceFolderPath);
         }
 
         string GetVersionString() => $"{_versionMajor}.{_versionMinor}.{_versionPatch}";
@@ -90,12 +161,23 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         {
             _assetInfo = PackageExporter.LoadAssetInfo(_sourceFolderPath);
             if (_assetInfo == null)
-                _assetInfo = new PackageAssetInfo { name = _packageName, version = GetVersionString(), urls = new PackageAssetInfo.UrlInfo[0], releases = new PackageAssetInfo.ReleaseInfo[0] };
+            {
+                _assetInfo = new PackageAssetInfo
+                {
+                    name = _packageName,
+                    version = GetVersionString(),
+                    urls = new PackageAssetInfo.UrlInfo[0],
+                    releases = new PackageAssetInfo.ReleaseInfo[0],
+                    relatedFolders = new string[0]
+                };
+            }
             else
             {
                 if (string.IsNullOrEmpty(_packageName)) _packageName = _assetInfo.name ?? "";
                 if (!string.IsNullOrEmpty(_assetInfo.version))
                     ParseVersion(_assetInfo.version, out _versionMajor, out _versionMinor, out _versionPatch);
+                if (_assetInfo.relatedFolders == null)
+                    _assetInfo.relatedFolders = new string[0];
             }
         }
 
@@ -124,8 +206,9 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                         var path = AssetDatabase.GetAssetPath(_sourceFolderAsset);
                         if (!string.IsNullOrEmpty(path) && AssetDatabase.IsValidFolder(path))
                         {
-                            _sourceFolderPath = path;
+                            PersistSourceFolder(path);
                             LoadAssetInfoFromFolder();
+                            ResolveBoothAssetInfo();
                         }
                     }
                     EditorGUI.BeginChangeCheck();
@@ -135,21 +218,46 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                         var path = _sourceFolderPath.Replace("\\", "/").TrimEnd('/');
                         if (AssetDatabase.IsValidFolder(path))
                         {
-                            _sourceFolderPath = path;
+                            PersistSourceFolder(path);
+                            _sourceFolderAsset = AssetDatabase.LoadAssetAtPath<DefaultAsset>(_sourceFolderPath);
                             LoadAssetInfoFromFolder();
+                            ResolveBoothAssetInfo();
                         }
                     }
                     if (!string.IsNullOrEmpty(_sourceFolderPath) && !AssetDatabase.IsValidFolder(_sourceFolderPath))
                     {
                         EditorGUILayout.HelpBox("有効なプロジェクト内フォルダパスを指定してください（例: Assets/MyPackage）", MessageType.Warning);
                     }
-                    EditorGUILayout.Space(6);
 
-                    // PackageAssetInfo 編集のため先にロード（最終リリース表示で参照する）
+                    // 関連フォルダ（PackageAssetInfo.json に保持し、エクスポート時に同梱）
                     if (_assetInfo == null && !string.IsNullOrEmpty(_sourceFolderPath))
                         LoadAssetInfoFromFolder();
                     if (_assetInfo == null)
-                        _assetInfo = new PackageAssetInfo { name = _packageName, version = GetVersionString(), urls = new PackageAssetInfo.UrlInfo[0], releases = new PackageAssetInfo.ReleaseInfo[0] };
+                    {
+                        _assetInfo = new PackageAssetInfo
+                        {
+                            name = _packageName,
+                            version = GetVersionString(),
+                            urls = new PackageAssetInfo.UrlInfo[0],
+                            releases = new PackageAssetInfo.ReleaseInfo[0],
+                            relatedFolders = new string[0]
+                        };
+                    }
+
+                    _relatedFoldersFoldout = EditorGUILayout.Foldout(_relatedFoldersFoldout, "関連フォルダ", true);
+                    if (_relatedFoldersFoldout)
+                    {
+                        EditorGUI.indentLevel++;
+                        SamirinEditorStyleHelper.DrawHelpBoxWithDefaultFont(
+                            "配布フォルダに加えて同梱するフォルダです。",
+                            MessageType.Info);
+                        DrawRelatedFoldersList();
+                        EditorGUI.indentLevel--;
+                    }
+                    EditorGUILayout.Space(6);
+
+                    // PackageAssetInfo 編集のため先にロード（最終リリース表示で参照する）
+                    // （上で _assetInfo は確保済み）
 
                     // パッケージ名・バージョン
                     EditorGUILayout.LabelField("パッケージ情報");
@@ -211,6 +319,36 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                     EditorGUILayout.Space(6);
 
                     EditorGUILayout.LabelField("パッケージ情報");
+
+                    // samirin33 配下のみ: SamirinBoothAssetInfo から反映
+                    if (PackageExporter.IsUnderSamirin33Folder(_sourceFolderPath))
+                    {
+                        var boothType = PackageExporter.GetBoothAssetInfoType() ?? typeof(ScriptableObject);
+                        EditorGUI.BeginChangeCheck();
+                        _boothAssetInfo = EditorGUILayout.ObjectField(
+                            "Booth Asset Info",
+                            _boothAssetInfo,
+                            boothType,
+                            false);
+                        if (EditorGUI.EndChangeCheck() && _boothAssetInfo != null &&
+                            !PackageExporter.IsBoothAssetInfo(_boothAssetInfo))
+                        {
+                            _boothAssetInfo = null;
+                        }
+                        EditorGUILayout.BeginHorizontal();
+                        GUI.enabled = _boothAssetInfo != null || !string.IsNullOrEmpty(_sourceFolderPath);
+                        if (GUILayout.Button("SamirinBoothAssetInfo から情報・URL・更新履歴を反映", GUILayout.Height(22)))
+                            ApplyFromBoothAssetInfo();
+                        GUI.enabled = true;
+                        if (GUILayout.Button("再検索", GUILayout.Width(64), GUILayout.Height(22)))
+                            ResolveBoothAssetInfo();
+                        EditorGUILayout.EndHorizontal();
+                        SamirinEditorStyleHelper.DrawHelpBoxWithDefaultFont(
+                            "名前・説明・バージョン・作者(samirin33)・Booth/YouTube URL・更新履歴(updateInfos)を取り込みます。",
+                            MessageType.Info);
+                        EditorGUILayout.Space(4);
+                    }
+
                     _assetInfo.author = EditorGUILayout.TextField("作者", _assetInfo.author ?? "");
                     _assetInfo.description = EditorGUILayout.TextArea(_assetInfo.description ?? "", GUILayout.MinHeight(44));
 
@@ -258,9 +396,13 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                     if (GUILayout.Button("エクスポート !", GUILayout.Height(28), GUILayout.ExpandWidth(true)))
                     {
                         EditorPrefs.SetString(EditorPrefsKeyOutputDirectory, _outputDirectory);
+                        EditorPrefs.SetString(EditorPrefsKeySourceFolder, _sourceFolderPath ?? "");
                         EditorPrefs.SetBool(EditorPrefsKeyOverwrite, _overwrite);
                         EditorPrefs.SetBool(EditorPrefsKeyIncludeInstaller, _includeInstaller);
                         EditorPrefs.SetBool(EditorPrefsKeyIncludeBoothManagerInstaller, _includeBoothManagerInstaller);
+
+                        _assetInfo.relatedFolders = PackageExporter.NormalizeRelatedFolders(
+                            _sourceFolderPath, _assetInfo.relatedFolders);
 
                         var includeBooth = PackageExporter.IsUnderSamirin33Folder(_sourceFolderPath)
                             && _includeBoothManagerInstaller;
@@ -288,12 +430,62 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                     EditorGUILayout.LabelField("ファイル名", string.IsNullOrEmpty(fileName) ? "—" : fileName);
                     EditorGUILayout.Space(4);
                 }
-            finally
-            {
-                EditorGUIUtility.labelWidth = prevLabelWidth;
-            }
-            EditorGUILayout.EndScrollView();
+                finally
+                {
+                    EditorGUIUtility.labelWidth = prevLabelWidth;
+                }
+                EditorGUILayout.EndScrollView();
             }, new Rect(0, 0, position.width, position.height));
+        }
+
+        void DrawRelatedFoldersList()
+        {
+            var list = _assetInfo.relatedFolders != null
+                ? new List<string>(_assetInfo.relatedFolders)
+                : new List<string>();
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                EditorGUILayout.BeginHorizontal();
+                var currentPath = (list[i] ?? "").Replace("\\", "/").TrimEnd('/');
+                var currentAsset = string.IsNullOrEmpty(currentPath)
+                    ? null
+                    : AssetDatabase.LoadAssetAtPath<DefaultAsset>(currentPath);
+
+                EditorGUI.BeginChangeCheck();
+                var nextAsset = (DefaultAsset)EditorGUILayout.ObjectField(
+                    currentAsset, typeof(DefaultAsset), false, GUILayout.ExpandWidth(true));
+                if (EditorGUI.EndChangeCheck())
+                {
+                    if (nextAsset == null)
+                    {
+                        list[i] = "";
+                    }
+                    else
+                    {
+                        var path = AssetDatabase.GetAssetPath(nextAsset).Replace("\\", "/");
+                        if (AssetDatabase.IsValidFolder(path))
+                            list[i] = path;
+                        else
+                            EditorUtility.DisplayDialog("関連フォルダ", "フォルダを選択してください。", "OK");
+                    }
+                }
+
+                if (GUILayout.Button("−", GUILayout.MaxWidth(22)))
+                {
+                    list.RemoveAt(i);
+                    i--;
+                }
+                EditorGUILayout.EndHorizontal();
+
+                if (!string.IsNullOrEmpty(list[i]) && !AssetDatabase.IsValidFolder(list[i]))
+                    EditorGUILayout.HelpBox("無効なフォルダパスです: " + list[i], MessageType.Warning);
+            }
+
+            if (GUILayout.Button("+ 関連フォルダを追加"))
+                list.Add("");
+
+            _assetInfo.relatedFolders = list.ToArray();
         }
 
         void DrawUrlList()

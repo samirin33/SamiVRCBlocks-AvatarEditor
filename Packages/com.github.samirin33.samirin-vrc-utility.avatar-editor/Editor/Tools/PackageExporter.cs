@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
@@ -36,6 +37,180 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
             var relative = assetPath.Replace("\\", "/");
             if (!relative.StartsWith("Assets/") && relative != "Assets") return null;
             return Path.GetFullPath(Path.Combine(Application.dataPath, "..", relative));
+        }
+
+        public const string BoothInformationFolder = "Assets/samirin33/SamirinBoothInformation";
+        const string BoothAssetInfoTypeName = "SamirinBoothAssetInfo";
+
+        /// <summary>
+        /// Assembly-CSharp 上の SamirinBoothAssetInfo 型を取得（パッケージから直接参照できないため）。
+        /// </summary>
+        public static Type GetBoothAssetInfoType()
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type type;
+                try
+                {
+                    type = assembly.GetType(BoothAssetInfoTypeName);
+                }
+                catch
+                {
+                    continue;
+                }
+                if (type != null)
+                    return type;
+            }
+            return null;
+        }
+
+        public static bool IsBoothAssetInfo(UnityEngine.Object obj)
+        {
+            return obj != null && obj.GetType().Name == BoothAssetInfoTypeName;
+        }
+
+        /// <summary>
+        /// 配布フォルダに対応する SamirinBoothAssetInfo を探す（folderName / フォルダ名 / name）。
+        /// </summary>
+        public static UnityEngine.Object FindBoothAssetInfoForFolder(string sourceAssetFolder)
+        {
+            if (string.IsNullOrEmpty(sourceAssetFolder))
+                return null;
+
+            var folderKey = Path.GetFileName(sourceAssetFolder.Replace("\\", "/").TrimEnd('/'));
+            if (string.IsNullOrEmpty(folderKey))
+                return null;
+
+            if (!AssetDatabase.IsValidFolder(BoothInformationFolder))
+                return null;
+
+            var guids = AssetDatabase.FindAssets("t:" + BoothAssetInfoTypeName, new[] { BoothInformationFolder });
+            UnityEngine.Object fallbackByName = null;
+
+            for (var i = 0; i < guids.Length; i++)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guids[i]).Replace('\\', '/');
+                if (path.EndsWith("/Manger.asset", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+                if (!IsBoothAssetInfo(asset))
+                    continue;
+
+                var so = new SerializedObject(asset);
+                var folderName = so.FindProperty("folderName")?.stringValue ?? "";
+                var displayName = so.FindProperty("name")?.stringValue ?? "";
+
+                if (!string.IsNullOrEmpty(folderName) &&
+                    string.Equals(folderName, folderKey, StringComparison.OrdinalIgnoreCase))
+                    return asset;
+
+                if (fallbackByName == null &&
+                    string.Equals(displayName, folderKey, StringComparison.OrdinalIgnoreCase))
+                    fallbackByName = asset;
+            }
+
+            return fallbackByName;
+        }
+
+        /// <summary>
+        /// SamirinBoothAssetInfo から PackageAssetInfo の基本情報・関連URL・更新履歴を反映する。
+        /// </summary>
+        /// <returns>反映に成功したら true</returns>
+        public static bool TryApplyFromBoothAssetInfo(
+            UnityEngine.Object boothAsset,
+            PackageAssetInfo target,
+            out string packageName,
+            out string version)
+        {
+            packageName = null;
+            version = null;
+            if (target == null || !IsBoothAssetInfo(boothAsset))
+                return false;
+
+            var so = new SerializedObject(boothAsset);
+            var folderName = so.FindProperty("folderName")?.stringValue?.Trim() ?? "";
+            var displayName = so.FindProperty("name")?.stringValue?.Trim() ?? "";
+            var description = so.FindProperty("description")?.stringValue ?? "";
+            var major = so.FindProperty("majorVertion")?.intValue ?? 0;
+            var minor = so.FindProperty("minorVertion")?.intValue ?? 0;
+            var patch = so.FindProperty("patchVertion")?.intValue ?? 0;
+            var boothUrl = so.FindProperty("url")?.stringValue?.Trim() ?? "";
+            var youtubeUrl = so.FindProperty("youtubeUrl")?.stringValue?.Trim() ?? "";
+
+            packageName = !string.IsNullOrEmpty(folderName) ? folderName : displayName;
+            version = $"{major}.{minor}.{patch}";
+
+            if (!string.IsNullOrEmpty(packageName))
+                target.name = packageName;
+            target.version = version;
+            target.author = "samirin33";
+            target.description = description;
+
+            var urls = new List<PackageAssetInfo.UrlInfo>();
+            if (!string.IsNullOrEmpty(boothUrl))
+            {
+                urls.Add(new PackageAssetInfo.UrlInfo
+                {
+                    urlDescription = "Booth",
+                    url = boothUrl
+                });
+            }
+            if (!string.IsNullOrEmpty(youtubeUrl))
+            {
+                urls.Add(new PackageAssetInfo.UrlInfo
+                {
+                    urlDescription = "YouTube",
+                    url = youtubeUrl
+                });
+            }
+            target.urls = urls.ToArray();
+            target.releases = BuildReleasesFromUpdateInfos(so.FindProperty("updateInfos"));
+
+            return true;
+        }
+
+        /// <summary>
+        /// updateInfos（古い→新しい順想定）を releases（最新が先頭）へ変換する。
+        /// </summary>
+        static PackageAssetInfo.ReleaseInfo[] BuildReleasesFromUpdateInfos(SerializedProperty updateInfosProp)
+        {
+            var list = new List<PackageAssetInfo.ReleaseInfo>();
+            if (updateInfosProp == null || !updateInfosProp.isArray)
+                return list.ToArray();
+
+            for (var i = 0; i < updateInfosProp.arraySize; i++)
+            {
+                var item = updateInfosProp.GetArrayElementAtIndex(i);
+                var updateName = item.FindPropertyRelative("updateName")?.stringValue?.Trim() ?? "";
+                var updateDescription = item.FindPropertyRelative("updateDescription")?.stringValue?.Trim() ?? "";
+                var dateProp = item.FindPropertyRelative("updateDate");
+                var year = dateProp?.FindPropertyRelative("year")?.intValue ?? 0;
+                var month = dateProp?.FindPropertyRelative("month")?.intValue ?? 0;
+                var day = dateProp?.FindPropertyRelative("day")?.intValue ?? 0;
+
+                var notes = string.IsNullOrEmpty(updateDescription)
+                    ? new string[0]
+                    : new[] { updateDescription };
+
+                list.Add(new PackageAssetInfo.ReleaseInfo
+                {
+                    version = string.IsNullOrEmpty(updateName) ? null : updateName,
+                    releaseDate = FormatBoothDate(year, month, day),
+                    releaseNotes = notes
+                });
+            }
+
+            // 最新を先頭に
+            list.Reverse();
+            return list.ToArray();
+        }
+
+        static string FormatBoothDate(int year, int month, int day)
+        {
+            if (year <= 0 || month <= 0 || day <= 0)
+                return null;
+            return $"{year}/{month}/{day}";
         }
 
         /// <summary>
@@ -160,10 +335,12 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
             {
                 assetInfo.name = packageName;
                 assetInfo.version = version;
+                assetInfo.relatedFolders = NormalizeRelatedFolders(sourceAssetFolder, assetInfo.relatedFolders);
                 SaveAssetInfo(sourceAssetFolder, assetInfo);
             }
 
             var paths = GetAssetPathsInFolder(sourceAssetFolder);
+            AppendRelatedFolderPaths(paths, sourceAssetFolder, assetInfo?.relatedFolders);
             // Installer 同梱時は Packages→Assets へ一時移動し、終了後に戻す
             var cleanupInstaller = false;
             var cleanupBoothManagerInstaller = false;
@@ -225,8 +402,6 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                 {
                     if (!IsUnderSamirin33Folder(sourceAssetFolder))
                     {
-                        Debug.LogWarning(
-                            "[PackageExporter] SamirinBoothManagerInstaller の同梱は Assets/samirin33 配下のエクスポート向けです。スキップします。");
                     }
                     else if (!StageBoothManagerInstallerToAssets())
                     {
@@ -299,6 +474,68 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                     CleanupStagedBoothManagerInstaller();
                 if (cleanupInstaller)
                     InstallerImport.CleanupStagedInstaller();
+            }
+        }
+
+        /// <summary>
+        /// 関連フォルダを正規化する（空・重複・配布フォルダ自身・無効パスを除く）。
+        /// </summary>
+        public static string[] NormalizeRelatedFolders(string sourceAssetFolder, string[] relatedFolders)
+        {
+            var result = new List<string>();
+            if (relatedFolders == null || relatedFolders.Length == 0)
+                return result.ToArray();
+
+            var source = (sourceAssetFolder ?? "").Replace("\\", "/").TrimEnd('/');
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < relatedFolders.Length; i++)
+            {
+                var folder = (relatedFolders[i] ?? "").Replace("\\", "/").TrimEnd('/');
+                if (string.IsNullOrEmpty(folder))
+                    continue;
+                if (!folder.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) && folder != "Assets")
+                    continue;
+                if (!string.IsNullOrEmpty(source) &&
+                    string.Equals(folder, source, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!AssetDatabase.IsValidFolder(folder))
+                {
+                    Debug.LogWarning("[PackageExporter] 関連フォルダが無効のためスキップ: " + folder);
+                    continue;
+                }
+                if (!seen.Add(folder))
+                    continue;
+                result.Add(folder);
+            }
+
+            return result.ToArray();
+        }
+
+        static void AppendRelatedFolderPaths(List<string> paths, string sourceAssetFolder, string[] relatedFolders)
+        {
+            if (paths == null)
+                return;
+
+            var normalized = NormalizeRelatedFolders(sourceAssetFolder, relatedFolders);
+            if (normalized.Length == 0)
+                return;
+
+            var set = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < normalized.Length; i++)
+            {
+                var folder = normalized[i];
+                if (set.Add(folder))
+                    paths.Add(folder);
+
+                var folderPaths = GetAssetPathsInFolder(folder);
+                for (int j = 0; j < folderPaths.Count; j++)
+                {
+                    if (set.Add(folderPaths[j]))
+                        paths.Add(folderPaths[j]);
+                }
+
+                Debug.Log($"[PackageExporter] 関連フォルダを含めます: {folder} ({folderPaths.Count} assets)");
             }
         }
 

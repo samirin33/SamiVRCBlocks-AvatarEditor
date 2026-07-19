@@ -12,6 +12,11 @@ public class PackageAssetInfo
     public UrlInfo[] urls;
     public ReleaseInfo[] releases;
 
+    /// <summary>
+    /// 配布フォルダに加えて同梱する関連フォルダ（Assets/ からのパス）。
+    /// </summary>
+    public string[] relatedFolders;
+
     [Serializable]
     public class UrlInfo
     {
