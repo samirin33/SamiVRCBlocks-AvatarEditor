@@ -58,6 +58,8 @@ sysinfo.txt
 # Builds
 *.apk
 *.unitypackage
+# Avatar Installer 同梱物（CI の create-unitypackage に必要）
+!Packages/com.github.samirin33.samirin-vrc-utility.avatar-editor/Editor/AvatarInstaller/AvatarsInstaller.unitypackage
 
 # Crashlytics generated file
 crashlytics-build.properties
