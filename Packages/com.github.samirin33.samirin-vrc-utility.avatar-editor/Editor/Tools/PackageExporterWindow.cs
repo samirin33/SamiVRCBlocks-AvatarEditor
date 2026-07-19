@@ -189,7 +189,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                     // Installer フォルダを含めるか（EditorPrefs）
                     _includeInstaller = EditorGUILayout.ToggleLeft("パッケージに「AvatarInstaller」を含める", _includeInstaller);
                     SamirinEditorStyleHelper.DrawHelpBoxWithDefaultFont(
-                        "有効にするとアセットを導入した人もsamirin33 VRC Utility関連のスクリプトが使用できるようになります。",
+                        "有効にすると Assets/AvatarInstaller として同梱されます。導入先でも Assets に展開され、samirin33 VRC Utility 関連スクリプトを使えるようになります。",
                         MessageType.Info);
 
                     // Assets/samirin33 配下のときだけ BoothManager インストーラ同梱オプションを表示

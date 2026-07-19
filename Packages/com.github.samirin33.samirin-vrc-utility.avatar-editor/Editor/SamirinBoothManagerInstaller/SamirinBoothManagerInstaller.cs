@@ -117,6 +117,16 @@ public static class SamirinBoothManagerInstaller
     }
 
     /// <summary>
+    /// 初回導入かどうか。SamirinBoothManagerInstaller ではなく Manager フォルダの有無で判定する。
+    /// </summary>
+    static bool IsManagerFolderPresent()
+    {
+        if (AssetDatabase.IsValidFolder(ManagerAssetPath))
+            return true;
+        return Directory.Exists(ToAbsolutePath(ManagerAssetPath));
+    }
+
+    /// <summary>
     /// Assets 上の本スクリプトのパスを返す。Packages のみの場合は false。
     /// </summary>
     static bool TryGetAssetsInstallerScriptPath(out string scriptAssetPath)
@@ -148,44 +158,73 @@ public static class SamirinBoothManagerInstaller
             return;
         }
 
-        if (!TryGetAssetsInstallerScriptPath(out var scriptPath))
+        var managerPresent = IsManagerFolderPresent();
+        var hasAssetsInstaller = TryGetAssetsInstallerScriptPath(out var scriptPath);
+
+        // トリガーは Assets 上のインストーラ。初回判定は Manager フォルダの有無。
+        if (!hasAssetsInstaller)
             return;
 
-        Log($"Assets 上のインストーラを検出: {scriptPath}");
-        _ = RunInstallAndSelfDeleteAsync(scriptPath);
+        if (managerPresent)
+        {
+            Log($"SamirinBoothManager は既にあるため、インストーラのみ削除します: {scriptPath}");
+            SetPendingDelete(true);
+            ScheduleDeleteInstaller(3);
+            return;
+        }
+
+        Log($"SamirinBoothManager 未導入（初回）。インストールを開始します: {scriptPath}");
+        _ = RunInstallAndSelfDeleteAsync();
     }
 
-    static async Task RunInstallAndSelfDeleteAsync(string scriptAssetPath)
+    static async Task RunInstallAndSelfDeleteAsync()
     {
         if (IsInstallLocked())
             return;
+
+        // 実行中に他経路でフォルダが作られていた場合は初回扱いにしない
+        if (IsManagerFolderPresent())
+        {
+            Log("SamirinBoothManager が既にあるため初回インストールをスキップします。");
+            if (TryGetAssetsInstallerScriptPath(out _))
+            {
+                SetPendingDelete(true);
+                ScheduleDeleteInstaller(3);
+            }
+            return;
+        }
 
         _isRunning = true;
         SetInstallLock(true);
 
         try
         {
-            // 初回読み込み時の案内（OK 後にダウンロード開始）
+            // 初回のみ案内を表示（OK 後にダウンロード開始）
             EditorUtility.DisplayDialog(
                 "samirin33",
                 "samirin33製アイテムのアップデート情報を取得するため、Unity起動時などにデータのダウンロードを行います。",
                 "OK");
 
-            // Manager が既にあれば InformationChecker に委譲（ダウンロード処理の重複を避ける）
-            var installed = await TryForceInstallViaInformationCheckerAsync();
-            if (!installed)
+            // 途中で Manager ができた場合は二重取得を避ける
+            if (IsManagerFolderPresent())
             {
-                // 初回ブートストラップ（InformationChecker 未導入時のみ）
-                installed = await BootstrapDownloadManagerAsync();
+                Log("ダイアログ表示中に Manager が検出されたためダウンロードをスキップします。");
             }
-
-            if (!installed)
+            else
             {
-                SetInstallLock(false);
-                return;
-            }
+                // Manager が既にあれば InformationChecker に委譲、無ければブートストラップ
+                var installed = await TryForceInstallViaInformationCheckerAsync();
+                if (!installed)
+                    installed = await BootstrapDownloadManagerAsync();
 
-            Log($"配置完了: {ManagerAssetPath}");
+                if (!installed)
+                {
+                    SetInstallLock(false);
+                    return;
+                }
+
+                Log($"配置完了: {ManagerAssetPath}");
+            }
 
             // InformationChecker の自動取得と二重ダウンロードしない
             SessionState.SetBool(InformationCheckerSessionCheckedKey, true);
@@ -193,9 +232,13 @@ public static class SamirinBoothManagerInstaller
             // リロード後に Item Center を開く
             EditorPrefs.SetBool(PrefsOpenAfterInstallKey, true);
 
-            // Refresh 前に削除予約（ドメインリロード耐性）
-            SetPendingDelete(true);
-            ScheduleDeleteInstaller(3);
+            // Assets 上にインストーラがあれば削除予約
+            if (TryGetAssetsInstallerScriptPath(out _))
+            {
+                SetPendingDelete(true);
+                ScheduleDeleteInstaller(3);
+            }
+
             AssetDatabase.Refresh();
         }
         catch (Exception e)

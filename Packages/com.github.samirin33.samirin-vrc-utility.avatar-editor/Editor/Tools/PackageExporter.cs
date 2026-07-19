@@ -137,7 +137,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         /// <param name="version">x.x.x 形式</param>
         /// <param name="outputDirectory">出力先ディレクトリ（フルパス）</param>
         /// <param name="overwrite">既存ファイルを上書きするか</param>
-        /// <param name="includeInstallerFolder">編集用 Avatar Installer を一時的に Assets へ移してパッケージに含めるか</param>
+        /// <param name="includeInstallerFolder">AvatarInstaller を Assets へ一時配置してパッケージに含めるか</param>
         /// <param name="includeBoothManagerInstaller">SamirinBoothManagerInstaller をパッケージに同梱するか（samirin33 配下向け）</param>
         /// <returns>成功した場合の出力ファイルパス。失敗時は null。</returns>
         public static string ExportPackage(
@@ -173,8 +173,9 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                 {
                     cleanupInstaller = true;
 
-                    // 編集用ソースを Assets へ一時移動してから同梱する
-                    if (!InstallerImport.EnsureInstallerExtracted(force: true))
+                    // Packages 原本は残し、Assets/AvatarInstaller へ一時コピーして同梱する
+                    // → インポート時も Assets/AvatarInstaller として展開される
+                    if (!InstallerImport.StageInstallerToAssets())
                     {
                         Debug.LogError(
                             "[PackageExporter] AvatarInstaller の配置に失敗しました。" +
@@ -184,17 +185,17 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
 
                     var installerFolder = InstallerImport.InstallerFolderAssetPath;
                     var installerPaths = GetAssetPathsInFolder(installerFolder);
-                    // FindAssets が取りこぼす場合に備え、ディスク上のファイルもアセットパスとして追加する
                     foreach (var diskPath in GetDiskAssetPathsInFolder(installerFolder))
                     {
                         if (!installerPaths.Contains(diskPath))
                             installerPaths.Add(diskPath);
                     }
 
-                    // 編集用 asmdef は配布パッケージに含めない
+                    // 編集用（defineConstraints 付き）asmdef が混入していたら除外
                     installerPaths.RemoveAll(p =>
-                        p.EndsWith(".asmdef", System.StringComparison.OrdinalIgnoreCase) ||
-                        p.EndsWith(".asmdef.meta", System.StringComparison.OrdinalIgnoreCase));
+                        p.EndsWith("AvatarInstaller.Source.asmdef", System.StringComparison.OrdinalIgnoreCase) ||
+                        p.EndsWith("AvatarInstaller.Source.asmdef.meta", System.StringComparison.OrdinalIgnoreCase) ||
+                        p.IndexOf(".Source.asmdef", System.StringComparison.OrdinalIgnoreCase) >= 0);
 
                     if (installerPaths.Count == 0)
                     {
@@ -217,7 +218,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                         if (!set.Contains(p)) { set.Add(p); paths.Add(p); }
                     }
 
-                    Debug.Log($"[PackageExporter] Installer を含めます ({installerPaths.Count} assets): " + string.Join(", ", installerPaths));
+                    Debug.Log($"[PackageExporter] AvatarInstaller を含めます ({installerPaths.Count} assets): " + string.Join(", ", installerPaths));
                 }
 
                 if (includeBoothManagerInstaller)
@@ -297,7 +298,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                 if (cleanupBoothManagerInstaller)
                     CleanupStagedBoothManagerInstaller();
                 if (cleanupInstaller)
-                    InstallerImport.RestoreInstallerSourceToPackage();
+                    InstallerImport.CleanupStagedInstaller();
             }
         }
 

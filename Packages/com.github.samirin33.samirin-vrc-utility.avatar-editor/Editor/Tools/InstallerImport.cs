@@ -6,34 +6,57 @@ using UnityEngine;
 namespace Samirin.VRCUtility.AvatarEditor.Editor
 {
     /// <summary>
-    /// Installer 編集用ソース（Packages/.../Editor/...）を、エクスポート時だけ Assets へ一時移動する。
+    /// Packages/.../Editor/AvatarInstaller を、エクスポート時だけ Assets/AvatarInstaller へ一時配置する。
+    /// パッケージに Assets パスで含めることで、インポート先でも Assets/AvatarInstaller として展開される。
     /// </summary>
     public static class InstallerImport
     {
         public const string InstallerFolderName = "AvatarInstaller";
         public const string InstallerFolderAssetPath = "Assets/" + InstallerFolderName;
         public const string InstallerEditorScriptFileName = "SamirinVRCUtilityAvatarInstallerEditor.cs";
+        public const string InstallerUnityPackageFileName = "AvatarsInstaller.unitypackage";
 
         /// <summary>編集用ソース（Packages/.../Editor/AvatarInstaller）</summary>
         public const string InstallerSourceFolderPackageRelative =
             "Packages/com.github.samirin33.samirin-vrc-utility.avatar-editor/Editor/" + InstallerFolderName;
 
-        [MenuItem("Tools/SamirinVRCUtility/Avatar Installer/Move To Assets")]
-        private static void MoveToAssetsMenu()
+        /// <summary>配布用に同梱する Editor 専用 asmdef（ソース用 asmdef は defineConstraints 付きのため別物）。</summary>
+        const string DistributionAsmdefFileName = "Samirin.VRCUtility.AvatarInstaller.asmdef";
+
+        const string DistributionAsmdefJson =
+            "{\n" +
+            "    \"name\": \"Samirin.VRCUtility.AvatarInstaller\",\n" +
+            "    \"rootNamespace\": \"\",\n" +
+            "    \"references\": [],\n" +
+            "    \"includePlatforms\": [\n" +
+            "        \"Editor\"\n" +
+            "    ],\n" +
+            "    \"excludePlatforms\": [],\n" +
+            "    \"allowUnsafeCode\": false,\n" +
+            "    \"overrideReferences\": false,\n" +
+            "    \"precompiledReferences\": [],\n" +
+            "    \"autoReferenced\": true,\n" +
+            "    \"defineConstraints\": [],\n" +
+            "    \"versionDefines\": [],\n" +
+            "    \"noEngineReferences\": false\n" +
+            "}\n";
+
+        [MenuItem("Tools/SamirinVRCUtility/Avatar Installer/Stage To Assets")]
+        private static void StageToAssetsMenu()
         {
-            if (EnsureInstallerExtracted(force: true))
-                Debug.Log($"[SamirinVRCUtility] Installer を {InstallerFolderAssetPath} へ移動しました。");
+            if (StageInstallerToAssets())
+                Debug.Log($"[SamirinVRCUtility] Installer を {InstallerFolderAssetPath} へ一時配置しました。");
         }
 
-        [MenuItem("Tools/SamirinVRCUtility/Avatar Installer/Restore To Package")]
-        private static void RestoreToPackageMenu()
+        [MenuItem("Tools/SamirinVRCUtility/Avatar Installer/Cleanup Staged Assets")]
+        private static void CleanupStagedMenu()
         {
-            if (RestoreInstallerSourceToPackage())
-                Debug.Log($"[SamirinVRCUtility] Installer を {InstallerSourceFolderPackageRelative} へ戻しました。");
+            CleanupStagedInstaller();
+            Debug.Log($"[SamirinVRCUtility] {InstallerFolderAssetPath} を削除しました。");
         }
 
         /// <summary>
-        /// force=true のとき、編集用ソースを Assets へ一時移動する（エクスポート用）。
+        /// force=true のとき、編集用ソースを Assets へ一時コピーする（エクスポート用）。
         /// force=false のときは、ソースまたは Assets 上に揃っていれば true。
         /// </summary>
         public static bool EnsureInstallerExtracted(bool force = false)
@@ -41,7 +64,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
             if (!force)
                 return IsSourceFolderComplete() || IsInstallerCompleteOnDisk();
 
-            return MoveInstallerSourceToAssets();
+            return StageInstallerToAssets();
         }
 
         public static bool IsInstallerCompleteOnDisk()
@@ -67,110 +90,94 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         }
 
         /// <summary>
-        /// Packages 上の編集用ソースを Assets へ移動する。
-        /// 既に Assets のみにある場合はそのまま成功扱い。
+        /// Packages 上の編集用ソースを Assets/AvatarInstaller へコピーする（原本は Packages に残す）。
+        /// 編集用 asmdef は配布に含めず、Editor 専用の配布用 asmdef を書き出す。
         /// </summary>
-        public static bool MoveInstallerSourceToAssets()
+        public static bool StageInstallerToAssets()
         {
             try
             {
-                // 既に移動済み
-                if (IsInstallerCompleteOnDisk() && !IsSourceFolderComplete())
-                {
-                    Debug.Log($"[SamirinVRCUtility] Installer は既に {InstallerFolderAssetPath} にあります。");
-                    return true;
-                }
-
-                if (!IsSourceFolderComplete())
+                var sourceFolder = GetInstallerSourceFolderPath();
+                if (string.IsNullOrEmpty(sourceFolder) || !Directory.Exists(sourceFolder))
                 {
                     Debug.LogWarning($"[SamirinVRCUtility] 編集用ソースが見つかりません: {InstallerSourceFolderPackageRelative}");
                     return IsInstallerCompleteOnDisk();
                 }
 
-                // Assets 側に古いコピーがあれば削除
-                if (AssetDatabase.IsValidFolder(InstallerFolderAssetPath) || IsInstallerCompleteOnDisk())
-                    RemoveInstallerFolder();
-
-                var err = AssetDatabase.MoveAsset(InstallerSourceFolderPackageRelative, InstallerFolderAssetPath);
-                if (!string.IsNullOrEmpty(err))
+                if (!File.Exists(Path.Combine(sourceFolder, InstallerEditorScriptFileName)))
                 {
-                    Debug.LogError($"[SamirinVRCUtility] Installer の Assets への移動に失敗: {err}");
+                    Debug.LogWarning($"[SamirinVRCUtility] インストーラスクリプトがありません: {InstallerEditorScriptFileName}");
                     return false;
                 }
 
+                CleanupStagedInstaller();
+                EnsureAssetFolder(InstallerFolderAssetPath);
+
+                var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                var destFull = Path.GetFullPath(Path.Combine(projectRoot, InstallerFolderAssetPath));
+
+                foreach (var file in Directory.GetFiles(sourceFolder, "*", SearchOption.TopDirectoryOnly))
+                {
+                    var name = Path.GetFileName(file);
+                    // 編集用 asmdef（defineConstraints 付き）は配布しない
+                    if (name.EndsWith(".asmdef", System.StringComparison.OrdinalIgnoreCase) ||
+                        name.EndsWith(".asmdef.meta", System.StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    File.Copy(file, Path.Combine(destFull, name), true);
+                }
+
+                // インポート先で UnityEditor 参照できるよう Editor 専用 asmdef を同梱
+                File.WriteAllText(Path.Combine(destFull, DistributionAsmdefFileName), DistributionAsmdefJson);
+
                 AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
-                Debug.Log($"[SamirinVRCUtility] Installer を {InstallerFolderAssetPath} へ一時移動しました。");
-                return IsInstallerCompleteOnDisk();
+
+                if (!IsInstallerCompleteOnDisk())
+                {
+                    Debug.LogError($"[SamirinVRCUtility] ステージ先にスクリプトがありません: {InstallerFolderAssetPath}/{InstallerEditorScriptFileName}");
+                    return false;
+                }
+
+                var unityPackage = Path.Combine(destFull, InstallerUnityPackageFileName);
+                if (!File.Exists(unityPackage))
+                    Debug.LogWarning($"[SamirinVRCUtility] {InstallerUnityPackageFileName} がステージに含まれていません。");
+
+                Debug.Log($"[SamirinVRCUtility] Installer を {InstallerFolderAssetPath} へ一時配置しました。");
+                return true;
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"[SamirinVRCUtility] Installer の移動に失敗しました: {ex.Message}");
+                Debug.LogError($"[SamirinVRCUtility] Installer のステージに失敗しました: {ex.Message}");
                 return false;
             }
         }
 
         /// <summary>
-        /// エクスポート後など、Assets 上の Installer を Packages の編集用場所へ戻す。
+        /// エクスポート後など、Assets 上の一時配置だけを削除する（Packages 原本は触らない）。
+        /// </summary>
+        public static void CleanupStagedInstaller()
+        {
+            RemoveInstallerFolder();
+        }
+
+        /// <summary>
+        /// 旧 API 互換: Assets 上のステージを消して Packages 原本があることを確認する。
         /// </summary>
         public static bool RestoreInstallerSourceToPackage()
         {
-            try
+            CleanupStagedInstaller();
+            if (IsSourceFolderComplete())
             {
-                if (IsSourceFolderComplete() && !IsInstallerCompleteOnDisk())
-                    return true;
-
-                if (!IsInstallerCompleteOnDisk() && !AssetDatabase.IsValidFolder(InstallerFolderAssetPath))
-                    return true;
-
-                // 戻り先に残骸があれば削除
-                if (IsSourceFolderComplete() || AssetDatabase.IsValidFolder(InstallerSourceFolderPackageRelative))
-                {
-                    if (AssetDatabase.IsValidFolder(InstallerSourceFolderPackageRelative))
-                        AssetDatabase.DeleteAsset(InstallerSourceFolderPackageRelative);
-                    else
-                    {
-                        var src = GetInstallerSourceFolderPath();
-                        if (!string.IsNullOrEmpty(src) && Directory.Exists(src))
-                            Directory.Delete(src, true);
-                    }
-                }
-
-                var sourceParent = "Packages/com.github.samirin33.samirin-vrc-utility.avatar-editor/Editor";
-                if (!AssetDatabase.IsValidFolder(sourceParent))
-                {
-                    Debug.LogError($"[SamirinVRCUtility] 戻り先親フォルダがありません: {sourceParent}");
-                    return false;
-                }
-
-                var fromPath = AssetDatabase.IsValidFolder(InstallerFolderAssetPath)
-                    ? InstallerFolderAssetPath
-                    : null;
-                if (fromPath == null)
-                {
-                    Debug.LogWarning("[SamirinVRCUtility] Assets 上に戻す Installer がありません。");
-                    return false;
-                }
-
-                var err = AssetDatabase.MoveAsset(fromPath, InstallerSourceFolderPackageRelative);
-                if (!string.IsNullOrEmpty(err))
-                {
-                    Debug.LogError($"[SamirinVRCUtility] Installer の Packages への復帰に失敗: {err}");
-                    return false;
-                }
-
-                AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
-                Debug.Log($"[SamirinVRCUtility] Installer を {InstallerSourceFolderPackageRelative} へ戻しました。");
-                return IsSourceFolderComplete();
+                Debug.Log($"[SamirinVRCUtility] Packages 原本を確認: {InstallerSourceFolderPackageRelative}");
+                return true;
             }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"[SamirinVRCUtility] Installer の復帰に失敗しました: {ex.Message}");
-                return false;
-            }
+
+            Debug.LogWarning($"[SamirinVRCUtility] Packages 原本が見つかりません: {InstallerSourceFolderPackageRelative}");
+            return false;
         }
 
         /// <summary>
-        /// Assets 上の Installer フォルダを削除する（復帰できない場合の後始末や、配布先での自己削除用）。
+        /// Assets 上の Installer フォルダを削除する。
         /// </summary>
         public static void RemoveInstallerFolder()
         {
@@ -197,6 +204,26 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
             catch (System.Exception ex)
             {
                 Debug.LogWarning($"[SamirinVRCUtility] Installer フォルダの削除に失敗しました: {ex.Message}");
+            }
+        }
+
+        static void EnsureAssetFolder(string assetFolderPath)
+        {
+            var normalized = assetFolderPath.Replace("\\", "/").TrimEnd('/');
+            if (AssetDatabase.IsValidFolder(normalized))
+                return;
+
+            var parts = normalized.Split('/');
+            if (parts.Length < 2 || parts[0] != "Assets")
+                return;
+
+            var current = "Assets";
+            for (int i = 1; i < parts.Length; i++)
+            {
+                var next = current + "/" + parts[i];
+                if (!AssetDatabase.IsValidFolder(next))
+                    AssetDatabase.CreateFolder(current, parts[i]);
+                current = next;
             }
         }
     }
