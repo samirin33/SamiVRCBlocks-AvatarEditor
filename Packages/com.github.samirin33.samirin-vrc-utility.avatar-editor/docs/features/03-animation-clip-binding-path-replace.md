@@ -6,8 +6,9 @@
 
 ## 開き方
 
-- メニュー: **`samirin33 Editor Tools`** → **`Animation Clip Binding Path Replace`**
+- メニュー: **`samirin33 Editor Tools`** → **`Animation`** → **`Animation Clip Binding Path Replace`**
 - ウィンドウタイトル: **Clip Binding Path Replace**
+- [Animation Clip Selector](06-animation-clip-selector.md) の Missing 詳細から、対象 Clip・置換前パスを事前入力した状態で開くこともできます
 
 ## 使い方
 
@@ -26,7 +27,7 @@
 ## 注意事項
 
 - 置換は**元のアセットを直接書き換え**ます。必要に応じてバックアップや版管理で復元できるようにしてください。
-- パスは完全一致で置換されます。部分一致で置換したい場合は、ルールを複数用意するか、パスを工夫してください。
+- パスは文字列の部分置換です。意図しない一致に注意してください。
 
 ## 関連
 

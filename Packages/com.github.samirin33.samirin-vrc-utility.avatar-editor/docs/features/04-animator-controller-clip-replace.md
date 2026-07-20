@@ -6,7 +6,7 @@
 
 ## 開き方
 
-- メニュー: **`samirin33 Editor Tools`** → **`Animator Controller Clip Replace`**
+- メニュー: **`samirin33 Editor Tools`** → **`Animation`** → **`Animator Controller Clip Replace`**
 - ウィンドウタイトル: **Controller Clip Replace**
 
 ## 使い方

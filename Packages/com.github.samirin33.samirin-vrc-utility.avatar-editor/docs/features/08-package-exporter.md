@@ -7,7 +7,7 @@
 
 ## 開き方
 
-- **samirin33 Editor Tools → Package Exporter** で Package Exporter ウィンドウを開きます。
+- **samirin33 Editor Tools → File → Package Exporter** で Package Exporter ウィンドウを開きます。
 - ウィンドウ内でソースフォルダ・パッケージ名・バージョン・出力先を指定し、「エクスポート !」で実行します。
 
 ## 使い方（Package Exporter ウィンドウ）

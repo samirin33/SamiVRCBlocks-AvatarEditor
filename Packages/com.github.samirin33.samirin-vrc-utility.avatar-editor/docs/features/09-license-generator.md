@@ -7,7 +7,7 @@
 
 ## 開き方
 
-- **samirin33 Editor Tools → VN3 License Generator** で VN3 License ウィンドウを開きます。
+- **samirin33 Editor Tools → File → VN3 License Generator** で VN3 License ウィンドウを開きます。
 - Package Exporter ウィンドウの「VN3ライセンスを編集／指定フォルダに生成」から開くと、出力先が Package Exporter の出力ディレクトリと共有されます。
 
 ## 使い方（VN3 License Generator ウィンドウ）

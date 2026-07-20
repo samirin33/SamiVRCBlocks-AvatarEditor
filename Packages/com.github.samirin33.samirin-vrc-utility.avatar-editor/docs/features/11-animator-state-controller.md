@@ -6,7 +6,7 @@ Animator内のステートやトランジション設定をインスペクター
 
 ## 開き方
 
-- メニュー: `samirin33 Editor Tools/AnimatorStateController`
+- メニュー: **`samirin33 Editor Tools`** → **`Animation`** → **`AnimatorStateController`**
 - Animatorウィンドウと一緒に利用する必要があります。
 
 ## 主な表示・編集機能

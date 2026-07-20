@@ -6,11 +6,12 @@
 
 ## 開き方
 
-- メニュー **`samirin33 Editor Tools`** → **`FPS Limiter`** を実行し、FPS Limiter ウィンドウを表示
+- メニュー: **`samirin33 Editor Tools`** → **`Performance`** → **`FPS Limiter`**
+- FPS Limiter ウィンドウが表示されます
 
 ## 使い方
 
-1. **samirin33 Editor Tools** → **FPS Limiter** でウィンドウを開く
+1. **samirin33 Editor Tools** → **Performance** → **FPS Limiter** でウィンドウを開く
 2. **目標 FPS** をスライダー（1〜120）で指定するか、プリセットボタンで設定
 3. 変更は即座に反映され、`Application.targetFrameRate` が更新されます
 
@@ -26,3 +27,5 @@
 ## 注意事項
 
 - この機能は**エディタプレビュー専用**です。ビルドには影響しません。ギミックの動作確認にのみ活用できます。
+
+## 関連

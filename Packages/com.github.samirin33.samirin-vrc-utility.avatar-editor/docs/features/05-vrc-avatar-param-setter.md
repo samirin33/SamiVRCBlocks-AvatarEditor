@@ -6,7 +6,7 @@
 
 ## 開き方
 
-- メニュー: **`samirin33 Editor Tools`** → **`VRChat Avatar Param Setter`**
+- メニュー: **`samirin33 Editor Tools`** → **`Parameter`** → **`VRChat Avatar Param Setter`**
 - ウィンドウタイトル: **VRChat Param Setter**
 
 ## 使い方
