@@ -17,6 +17,8 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
     {
         public string Name;
         public string FullPath;
+        /// <summary>Animator 使用箇所検索用。サブステートマシン階層のみ（BlendTree 名は含めない）。</summary>
+        public string AnimatorScopePath;
         public List<AnimationClip> Clips = new List<AnimationClip>();
         public List<ClipGroup> Children = new List<ClipGroup>();
         public int TotalClipCount => Clips.Count + Children.Sum(c => c.TotalClipCount);
@@ -59,7 +61,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             }
         }
 
-        [MenuItem("samirin33 Editor Tools/Animation Clip Selector")]
+        [MenuItem("samirin33 Editor Tools/Animation/Animation Clip Selector", false, 2)]
         public static void Open()
         {
             var window = GetWindow<AnimationClipSelector>(WindowTitle);
@@ -139,6 +141,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
 
             settings = CreateInstance<AnimationClipSelectorSettings>();
             settings.ItemSpacing = 2f;
+            settings.ShowBlendTreeNested = false;
             AssetDatabase.CreateAsset(settings, SettingsAssetPath);
             AssetDatabase.SaveAssets();
             return settings;
@@ -207,7 +210,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
 
                 EditorGUI.BeginChangeCheck();
                 var controllerPath = GetControllerPath(animator.runtimeAnimatorController);
-                var clipsByLayer = GetClipsByGroupedLayer(animator.runtimeAnimatorController);
+                var clipsByLayer = GetClipsByGroupedLayer(animator.runtimeAnimatorController, Settings.ShowBlendTreeNested);
 
                 if (controllerPath != _currentControllerPath)
                 {
@@ -247,6 +250,15 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                     AnimationClipSelectorStateManager.RequestSave();
                 }
 
+                var reloadIcon = EditorGUIUtility.IconContent("Refresh");
+                if (reloadIcon == null) reloadIcon = new GUIContent("↻", "リストを再読み込み");
+                else reloadIcon.tooltip = "リストを再読み込み";
+                if (GUILayout.Button(reloadIcon, GUILayout.Width(30), GUILayout.Height(20)))
+                {
+                    ReloadSelectorList(animator, controllerPath);
+                    clipsByLayer = GetClipsByGroupedLayer(animator.runtimeAnimatorController, Settings.ShowBlendTreeNested);
+                }
+
                 EditorGUILayout.LabelField("検索", GUILayout.Width(28));
                 _searchFilter = EditorGUILayout.TextField(_searchFilter);
                 var clearIcon = EditorGUIUtility.IconContent("winbtn_win_close");
@@ -262,6 +274,15 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 if (EditorGUI.EndChangeCheck())
                 {
                     Settings.ItemSpacing = spacing;
+                    _pendingSliderSave = true;
+                }
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                EditorGUI.BeginChangeCheck();
+                Settings.ShowBlendTreeNested = EditorGUILayout.ToggleLeft("BlendTree 入れ子表示", Settings.ShowBlendTreeNested);
+                if (EditorGUI.EndChangeCheck())
+                {
                     _pendingSliderSave = true;
                 }
                 EditorGUILayout.EndHorizontal();
@@ -328,6 +349,8 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                         EditorGUI.DrawRect(foldoutRect, new Color(0.3f, 0.5f, 0.8f, 0.1f));
                     var countLabel = string.IsNullOrEmpty(_searchFilter) ? $"{rootGroup.TotalClipCount}件" : $"{filteredCount}/{rootGroup.TotalClipCount}件";
                     _layerFoldoutState[foldoutKey] = EditorGUI.Foldout(new Rect(foldoutRect.x, foldoutRect.y, foldoutRect.width, 18f), isExpanded, $"{layerName} ({countLabel})", true);
+                    if (!_layerFoldoutState[foldoutKey])
+                        DrawFoldoutIssueIcons(rootGroup, foldoutRect, activeRoot, Settings, _searchFilter, getPathConflict);
 
                     if (_layerFoldoutState[foldoutKey])
                     {
@@ -356,6 +379,30 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                     _pendingClipSelection = null;
                 }
             }, new Rect(0, 0, position.width, position.height));
+        }
+
+        private void ReloadSelectorList(Animator animator, string controllerPath)
+        {
+            if (animator == null || animator.runtimeAnimatorController == null)
+                return;
+
+            if (AnimationWindowHelper.TryGetAnimationWindowState(out var activeRoot, out _))
+            {
+                if (activeRoot != null)
+                    _lastActiveRoot = activeRoot;
+            }
+            else if (Selection.activeGameObject != null && GetAnimatorFromRoot(Selection.activeGameObject) != null)
+            {
+                _lastActiveRoot = Selection.activeGameObject;
+            }
+
+            _clips = GetAllAnimationClips(animator.runtimeAnimatorController);
+            _pathConflictCache.Clear();
+            _pathConflictCacheControllerPath = controllerPath;
+            _pathConflictCachePending = false;
+            _pathConflictCacheInvalidated = false;
+            _pathConflictCache = BuildPathConflictCache(animator.runtimeAnimatorController);
+            Repaint();
         }
 
         private void OnInspectorUpdate()
@@ -387,6 +434,17 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
 
             // 構造化した競合詳細を専用ウィンドウで表示（クリックで選択可能）
             ClipConflictDetailsWindow.Open(clip, conflictEntries, root);
+        }
+
+        private static void ShowMissingBindingsPopup(AnimationClip clip, GameObject root)
+        {
+            if (clip == null || root == null) return;
+
+            var animator = GetAnimatorFromRoot(root);
+            var controllerClips = animator?.runtimeAnimatorController != null
+                ? GetAllAnimationClips(animator.runtimeAnimatorController)
+                : new List<AnimationClip> { clip };
+            ClipMissingBindingDetailsWindow.Open(clip, root, controllerClips);
         }
 
         private static Animator GetAnimatorFromRoot(GameObject root)
@@ -553,6 +611,19 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                             PropertyName = property,
                             TypeName = typeName
                         };
+                        foreach (var layerIndex in selfLayers)
+                        {
+                            if (!perLayer.TryGetValue(layerIndex, out var selfClipsInLayer) || selfClipsInLayer == null || selfClipsInLayer.Count == 0)
+                                continue;
+                            var selfLayerName = (layerIndex >= 0 && layerIndex < baseController.layers.Length)
+                                ? baseController.layers[layerIndex].name
+                                : $"Layer {layerIndex}";
+                            entry.SelfTargets.Add(new ConflictTargetInfo
+                            {
+                                LayerName = selfLayerName,
+                                Clips = selfClipsInLayer.Where(c => c != null).ToList()
+                            });
+                        }
                         foreach (var kvLayer in otherLayerEntries)
                         {
                             var layerIndex = kvLayer.Key;
@@ -585,6 +656,12 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             if (w != null) w.Repaint();
         }
 
+        /// <summary>Selector の表示を更新する。Missing バインディング操作後などに呼ぶ。</summary>
+        internal static void InvalidateAndRepaint()
+        {
+            InvalidatePathConflictCache();
+        }
+
         /// <summary>指定クリップの競合エントリ一覧を取得。root から Controller を解決してキャッシュを構築する。Undo 後の詳細ウィンドウ更新用。</summary>
         internal static ConflictEntry[] GetConflictEntriesForClip(AnimationClip clip, GameObject root)
         {
@@ -600,7 +677,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         /// <summary>
         /// レイヤー毎にクリップをグループ化（サブステートマシン階層を保持）。OverrideControllerのオーバーライドを適用。
         /// </summary>
-        private static List<KeyValuePair<string, ClipGroup>> GetClipsByGroupedLayer(RuntimeAnimatorController controller)
+        private static List<KeyValuePair<string, ClipGroup>> GetClipsByGroupedLayer(RuntimeAnimatorController controller, bool showBlendTreeNested)
         {
             var result = new List<KeyValuePair<string, ClipGroup>>();
             AnimatorController baseController = null;
@@ -636,28 +713,60 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
 
             foreach (var layer in baseController.layers)
             {
-                var root = BuildClipGroupFromStateMachine(layer.stateMachine, layer.name, layer.name, ResolveClip);
+                var root = BuildClipGroupFromStateMachine(layer.stateMachine, layer.name, layer.name, ResolveClip, showBlendTreeNested);
                 result.Add(new KeyValuePair<string, ClipGroup>(layer.name, root));
             }
 
             return result;
         }
 
+        /// <summary>レイヤー毎にクリップをグループ化（サブステートマシン階層を保持）。OverrideControllerのオーバーライドを適用。</summary>
+        private static List<KeyValuePair<string, ClipGroup>> GetClipsByGroupedLayer(RuntimeAnimatorController controller)
+        {
+            return GetClipsByGroupedLayer(controller, true);
+        }
+
         /// <summary>ステートマシンを再帰走査し、サブステート階層を保持したClipGroupを構築。共通のサブステート検知ロジック。</summary>
-        private static ClipGroup BuildClipGroupFromStateMachine(AnimatorStateMachine stateMachine, string layerName, string pathPrefix, System.Func<AnimationClip, AnimationClip> resolveClip)
+        private static ClipGroup BuildClipGroupFromStateMachine(AnimatorStateMachine stateMachine, string layerName, string pathPrefix, System.Func<AnimationClip, AnimationClip> resolveClip, bool showBlendTreeNested)
         {
             var group = new ClipGroup
             {
                 Name = stateMachine != null ? stateMachine.name : "",
-                FullPath = pathPrefix
+                FullPath = pathPrefix,
+                AnimatorScopePath = pathPrefix
             };
             if (stateMachine == null) return group;
 
             var clipsSet = new HashSet<AnimationClip>();
             foreach (var child in stateMachine.states)
             {
-                if (child.state == null) continue;
-                CollectClipsFromMotion(child.state.motion, clipsSet, resolveClip);
+                if (child.state == null || child.state.motion == null) continue;
+
+                if (child.state.motion is AnimationClip motionClip)
+                {
+                    var resolved = resolveClip(motionClip);
+                    if (resolved != null)
+                        clipsSet.Add(resolved);
+                }
+                else if (child.state.motion is BlendTree motionBlendTree)
+                {
+                    if (showBlendTreeNested)
+                    {
+                        var blendTreePath = pathPrefix + "|" + child.state.name + ": " + motionBlendTree.name;
+                        var btGroup = BuildClipGroupFromBlendTree(
+                            motionBlendTree,
+                            resolveClip,
+                            child.state.name,
+                            pathPrefix,
+                            blendTreePath);
+                        if (btGroup != null && (btGroup.Clips.Count > 0 || btGroup.Children.Count > 0))
+                            group.Children.Add(btGroup);
+                    }
+                    else
+                    {
+                        CollectClipsFromMotion(child.state.motion, clipsSet, resolveClip);
+                    }
+                }
             }
             group.Clips = clipsSet.ToList();
 
@@ -665,11 +774,61 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             {
                 if (child.stateMachine == null) continue;
                 var childPath = pathPrefix + "|" + child.stateMachine.name;
-                var childGroup = BuildClipGroupFromStateMachine(child.stateMachine, layerName, childPath, resolveClip);
+                var childGroup = BuildClipGroupFromStateMachine(child.stateMachine, layerName, childPath, resolveClip, showBlendTreeNested);
                 if (childGroup.Clips.Count > 0 || childGroup.Children.Count > 0)
                     group.Children.Add(childGroup);
             }
             return group;
+        }
+
+        private static ClipGroup BuildClipGroupFromBlendTree(
+            BlendTree blendTree,
+            System.Func<AnimationClip, AnimationClip> resolveClip,
+            string stateName,
+            string animatorScopePath,
+            string fullPath)
+        {
+            var group = new ClipGroup
+            {
+                Name = blendTree != null ? $"{stateName}: {blendTree.name}" : "",
+                FullPath = fullPath,
+                AnimatorScopePath = animatorScopePath
+            };
+            if (blendTree == null) return group;
+
+            var clipsSet = new HashSet<AnimationClip>();
+            for (int i = 0; i < blendTree.children.Length; i++)
+            {
+                var child = blendTree.children[i];
+                if (child.motion == null) continue;
+
+                if (child.motion is AnimationClip motionClip)
+                {
+                    var resolved = resolveClip(motionClip);
+                    if (resolved != null)
+                        clipsSet.Add(resolved);
+                }
+                else if (child.motion is BlendTree childBlendTree)
+                {
+                    var childFullPath = fullPath + "|" + stateName + ": " + childBlendTree.name;
+                    var childGroup = BuildClipGroupFromBlendTree(
+                        childBlendTree,
+                        resolveClip,
+                        stateName,
+                        animatorScopePath,
+                        childFullPath);
+                    if (childGroup != null && (childGroup.Clips.Count > 0 || childGroup.Children.Count > 0))
+                        group.Children.Add(childGroup);
+                }
+            }
+
+            group.Clips = clipsSet.ToList();
+            return group;
+        }
+
+        private static ClipGroup BuildClipGroupFromStateMachine(AnimatorStateMachine stateMachine, string layerName, string pathPrefix, System.Func<AnimationClip, AnimationClip> resolveClip)
+        {
+            return BuildClipGroupFromStateMachine(stateMachine, layerName, pathPrefix, resolveClip, true);
         }
 
         private static void ExpandFoldoutContainingClip(List<KeyValuePair<string, ClipGroup>> clipsByLayer, string controllerPath, AnimationClip clip, Dictionary<string, bool> foldoutState)
@@ -732,8 +891,101 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             return count;
         }
 
+        private static void DrawFoldoutIssueIcons(
+            ClipGroup group,
+            Rect foldoutRect,
+            GameObject activeRoot,
+            AnimationClipSelectorSettings settings,
+            string searchFilter,
+            System.Func<AnimationClip, (bool hasConflict, int pathCount, ConflictEntry[] conflictEntries)?> getPathConflict)
+        {
+            if (group == null || activeRoot == null)
+                return;
+
+            var hasConflict = GroupHasConflict(group, settings, searchFilter, getPathConflict);
+            var hasMissing = GroupHasMissing(group, activeRoot, settings, searchFilter);
+            if (!hasConflict && !hasMissing)
+                return;
+
+            var iconX = foldoutRect.xMax - 6f;
+            if (hasConflict)
+            {
+                var warnRect = new Rect(iconX - 20f, foldoutRect.y, 20f, 18f);
+                var warnIcon = EditorGUIUtility.IconContent("sv_icon_dot15_pix16_gizmo");
+                if (warnIcon == null) warnIcon = new GUIContent("!", "この配下にコンフリクトがあります");
+                else warnIcon.tooltip = "この配下にコンフリクトがあります";
+                GUI.Label(warnRect, warnIcon);
+                iconX -= 22f;
+            }
+
+            if (hasMissing)
+            {
+                var missingRect = new Rect(iconX - 20f, foldoutRect.y, 20f, 18f);
+                var missingIcon = EditorGUIUtility.IconContent("sv_icon_dot12_pix16_gizmo");
+                if (missingIcon == null) missingIcon = new GUIContent("M", "この配下に Missing があります");
+                else missingIcon.tooltip = "この配下に Missing があります";
+                GUI.Label(missingRect, missingIcon);
+            }
+        }
+
+        private static bool GroupHasConflict(
+            ClipGroup group,
+            AnimationClipSelectorSettings settings,
+            string searchFilter,
+            System.Func<AnimationClip, (bool hasConflict, int pathCount, ConflictEntry[] conflictEntries)?> getPathConflict)
+        {
+            if (group == null)
+                return false;
+
+            foreach (var clip in group.Clips)
+            {
+                if (clip == null || !ClipMatchesSearch(clip, searchFilter) || settings.IsIgnoredClip(clip))
+                    continue;
+
+                var pathConflict = getPathConflict?.Invoke(clip);
+                if (pathConflict.HasValue && pathConflict.Value.hasConflict)
+                    return true;
+            }
+
+            foreach (var child in group.Children)
+            {
+                if (GroupHasConflict(child, settings, searchFilter, getPathConflict))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool GroupHasMissing(
+            ClipGroup group,
+            GameObject activeRoot,
+            AnimationClipSelectorSettings settings,
+            string searchFilter)
+        {
+            if (group == null || activeRoot == null)
+                return false;
+
+            foreach (var clip in group.Clips)
+            {
+                if (clip == null || !ClipMatchesSearch(clip, searchFilter) || settings.IsIgnoredClip(clip))
+                    continue;
+
+                if (AnimationClipBindingPathUtility.GetMissingBindingPathCount(activeRoot.transform, clip) > 0)
+                    return true;
+            }
+
+            foreach (var child in group.Children)
+            {
+                if (GroupHasMissing(child, activeRoot, settings, searchFilter))
+                    return true;
+            }
+
+            return false;
+        }
+
         private static void DrawClipGroup(ClipGroup group, string controllerPath, string pathPrefix, GameObject activeRoot, Animator animator, AnimationClip activeClip, AnimationClipSelectorSettings settings, float itemSpacing, Dictionary<string, bool> foldoutState, string searchFilter, bool openAnimationWindowOnClipSelect, System.Func<AnimationClip, (bool hasConflict, int pathCount, ConflictEntry[] conflictEntries)?> getPathConflict, ref float scrollContentY)
         {
+            var animatorScopePath = string.IsNullOrEmpty(group.AnimatorScopePath) ? pathPrefix : group.AnimatorScopePath;
             var hasSubGroups = group.Children.Count > 0;
             var hasDirectClips = group.Clips.Count > 0;
             var rowHeight = 20f;
@@ -757,6 +1009,8 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                         EditorGUI.DrawRect(foldoutRect, new Color(0.3f, 0.5f, 0.8f, 0.15f));
                     var childCountLabel = string.IsNullOrEmpty(searchFilter) ? $"{child.TotalClipCount}件" : $"{GetMatchingClipCount(child, searchFilter)}/{child.TotalClipCount}件";
                     foldoutState[childKey] = EditorGUI.Foldout(new Rect(foldoutRect.x, foldoutRect.y, foldoutRect.width, rowHeight), childExpanded, $"{child.Name} ({childCountLabel})", true);
+                    if (!foldoutState[childKey])
+                        DrawFoldoutIssueIcons(child, foldoutRect, activeRoot, settings, searchFilter, getPathConflict);
 
                     if (foldoutState[childKey])
                     {
@@ -809,7 +1063,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                     var pathConflict = getPathConflict?.Invoke(clip);
                     var isIgnoredClip = settings.IsIgnoredClip(clip);
                     var hasMultiLayerConflict = !isIgnoredClip && pathConflict.HasValue && pathConflict.Value.hasConflict;
-                    var missingBindingCount = isIgnoredClip ? 0 : GetMissingBindingPathCount(activeRoot, clip);
+                    var missingBindingCount = isIgnoredClip ? 0 : AnimationClipBindingPathUtility.GetMissingBindingPathCount(activeRoot.transform, clip);
                     var hasMissingBinding = missingBindingCount > 0;
                     var pathCount = pathConflict?.pathCount ?? 0;
                     var conflictEntries = pathConflict?.conflictEntries ?? Array.Empty<ConflictEntry>();
@@ -866,16 +1120,24 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                     {
                         var missingRect = new Rect(warnX - 26, rect.y, 26, rowHeight);
                         var missingIcon = EditorGUIUtility.IconContent("sv_icon_dot12_pix16_gizmo");
-                        if (missingIcon == null) missingIcon = new GUIContent("M", $"ルートオブジェクトから見て存在しない Transform パスにバインドされたキーがあります。(Missing パス数:{missingBindingCount}個)");
-                        else missingIcon.tooltip = $"ルートオブジェクトから見て存在しない Transform パスにバインドされたキーがあります。(Missing パス数:{missingBindingCount}個)";
+                        if (missingIcon == null) missingIcon = new GUIContent("M", $"ルートオブジェクトから見て存在しない Transform パスにバインドされたキーがあります。(Missing パス数:{missingBindingCount}個)\nクリックで詳細と置換・削除");
+                        else missingIcon.tooltip = $"ルートオブジェクトから見て存在しない Transform パスにバインドされたキーがあります。(Missing パス数:{missingBindingCount}個)\nクリックで詳細と置換・削除";
+
+                        if (GUI.Button(missingRect, GUIContent.none, GUIStyle.none))
+                        {
+                            ShowMissingBindingsPopup(clip, activeRoot);
+                            AnimationClipSelector.SetAnimationWindowToClip(clip);
+                        }
                         GUI.Label(missingRect, missingIcon);
+
+                        warnX -= 26;
                     }
 
                     var animatorContent = EditorGUIUtility.IconContent("AnimatorStateMachine Icon");
                     if (animatorContent == null) animatorContent = new GUIContent("A", "Animatorでの使用箇所を選択");
                     else animatorContent.tooltip = "Animatorでの使用箇所を選択";
                     if (GUI.Button(animatorRect, animatorContent))
-                        SelectUsageInAnimator(animator.gameObject, animator.runtimeAnimatorController, clip, pathPrefix);
+                        SelectUsageInAnimator(animator.gameObject, animator.runtimeAnimatorController, clip, animatorScopePath);
 
                     if (GUI.Button(zoomRect, EditorGUIUtility.IconContent("AnimationClip Icon")))
                     {
@@ -959,32 +1221,6 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             foreach (var b in AnimationUtility.GetObjectReferenceCurveBindings(clip))
                 paths.Add(b.path);
             return paths.Count;
-        }
-
-        /// <summary>クリップ内で、指定ルートから見て Missing になっているバインディングパス数</summary>
-        private static int GetMissingBindingPathCount(GameObject root, AnimationClip clip)
-        {
-            if (root == null || clip == null) return 0;
-            var transform = root.transform;
-            var missingPaths = new HashSet<string>();
-
-            foreach (var b in AnimationUtility.GetCurveBindings(clip))
-            {
-                var path = b.path;
-                if (string.IsNullOrEmpty(path)) continue; // ルートは Missing 扱いしない
-                if (transform.Find(path) == null)
-                    missingPaths.Add(path);
-            }
-
-            foreach (var b in AnimationUtility.GetObjectReferenceCurveBindings(clip))
-            {
-                var path = b.path;
-                if (string.IsNullOrEmpty(path)) continue;
-                if (transform.Find(path) == null)
-                    missingPaths.Add(path);
-            }
-
-            return missingPaths.Count;
         }
 
         private static void CollectClipsFromMotion(Motion motion, HashSet<AnimationClip> clips, System.Func<AnimationClip, AnimationClip> resolveClip)

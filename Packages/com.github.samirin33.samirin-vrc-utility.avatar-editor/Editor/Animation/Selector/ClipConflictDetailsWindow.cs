@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using Samirin33.Editor;
@@ -21,6 +22,8 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         public string LastObjectName;
         public string PropertyName;
         public string TypeName;
+        /// <summary>選択 Clip と同じレイヤー上で、このパス＋属性を持つ Clip 一覧</summary>
+        public List<ConflictTargetInfo> SelfTargets = new List<ConflictTargetInfo>();
         public List<ConflictTargetInfo> Targets = new List<ConflictTargetInfo>();
     }
 
@@ -50,7 +53,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             window._clip = clip;
             window._entries = entries != null ? new List<ConflictEntry>(entries) : new List<ConflictEntry>();
             window._root = root;
-            window.minSize = new Vector2(460, 280);
+            window.minSize = new Vector2(480, 300);
             window.Show();
             window.Focus();
         }
@@ -83,8 +86,14 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 if (_clip != null)
                 {
                     var clipStyle = new GUIStyle(EditorStyles.label) { fontStyle = FontStyle.Italic };
-                    EditorGUILayout.LabelField("Clip: " + _clip.name, clipStyle);
+                    EditorGUILayout.LabelField("選択 Clip: " + _clip.name, clipStyle);
                 }
+
+                EditorGUILayout.Space(4);
+                SamirinEditorStyleHelper.DrawHelpBoxWithDefaultFont(
+                    "同じ Transform パス＋属性を、異なるレイヤーの Clip が同時に制御しようとしています。\n" +
+                    "これが意図的なものでない場合、正しく再生されない可能性があります。",
+                MessageType.Info);
 
                 EditorGUILayout.Space();
 
@@ -109,7 +118,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 {
                     if (target?.Clips != null) target.Clips.Remove(clip);
                 }
-                // 個別削除で全Clipが消えたエントリは一覧からも削除（「コンフリクトプロパティを削除」だけ残らないようにする）
+
                 var emptyEntries = new List<ConflictEntry>();
                 foreach (var entry in _entries)
                 {
@@ -137,7 +146,6 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
 
             SamirinEditorStyleHelper.DrawWithDefaultFont(() =>
             {
-                // 1行目: 選択Clipの競合パスの最後のオブジェクト名（クリックでヒエラルキーで選択）
                 var lastName = string.IsNullOrEmpty(entry.LastObjectName) ? entry.Path : entry.LastObjectName;
                 var pathLabel = string.IsNullOrEmpty(entry.PropertyName)
                     ? lastName
@@ -155,10 +163,74 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 if (pathRect.Contains(Event.current.mousePosition))
                     EditorGUIUtility.AddCursorRect(pathRect, MouseCursor.Link);
 
-                // コンフリクト解消: 他レイヤー側のClipから該当キーを削除するボタン（現在のClipは残す）
-                EditorGUILayout.BeginHorizontal();
-                GUILayout.FlexibleSpace();
-                if (GUILayout.Button("コンフリクトプロパティを削除", GUILayout.MinWidth(120)))
+                EditorGUILayout.Space(4);
+
+                var selfTargets = entry.SelfTargets != null && entry.SelfTargets.Count > 0
+                    ? entry.SelfTargets
+                    : BuildFallbackSelfTargets();
+
+                foreach (var selfTarget in selfTargets)
+                {
+                    if (selfTarget?.Clips == null || selfTarget.Clips.Count == 0)
+                        continue;
+
+                    EditorGUILayout.LabelField($"選択 Clip（{selfTarget.LayerName} レイヤー）", EditorStyles.miniBoldLabel);
+
+                    if (GUILayout.Button($"{selfTarget.LayerName}レイヤー側からすべて削除", GUILayout.MinWidth(180)))
+                    {
+                        if (RemoveBindingFromClips(selfTarget.Clips, entry.Path, entry.PropertyName, $"{selfTarget.LayerName}レイヤー側から競合プロパティを削除"))
+                        {
+                            toRemoveEntries.Add(entry);
+                            SelectTransformAtPath(entry.Path);
+                            AnimationClipSelector.InvalidatePathConflictCache();
+                        }
+                    }
+
+                    EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                    foreach (var clip in selfTarget.Clips)
+                    {
+                        EditorGUILayout.BeginHorizontal();
+
+                        if (clip == null) continue;
+                        var lineBtnStyle = _clickableLabelStyle ?? EditorStyles.label;
+                        if (GUILayout.Button("  • " + clip.name, lineBtnStyle))
+                        {
+                            SelectTransformAtPath(entry.Path);
+                            AnimationClipSelector.SetAnimationWindowToClip(clip);
+                        }
+
+                        GUILayout.FlexibleSpace();
+
+                        if (_clip != null && selfTarget.Clips.Contains(_clip) &&
+                            GUILayout.Button("選択 Clip から削除", GUILayout.MinWidth(140)))
+                        {
+                            if (RemoveBindingFromClip(_clip, entry.Path, entry.PropertyName, "選択 Clip から競合プロパティを削除"))
+                            {
+                                EditorUtility.SetDirty(_clip);
+                                toRemoveEntries.Add(entry);
+                                SelectTransformAtPath(entry.Path);
+                                AnimationClipSelector.InvalidatePathConflictCache();
+                            }
+                        }
+                        
+                        EditorGUILayout.EndHorizontal();
+                    }
+
+                    EditorGUILayout.EndVertical();
+                    EditorGUILayout.Space(4);
+                }
+
+                var hasOtherLayerClips = entry.Targets != null && entry.Targets.Any(t => t?.Clips != null && t.Clips.Count > 0);
+                if (!hasOtherLayerClips)
+                {
+                    EditorGUILayout.EndVertical();
+                    return;
+                }
+
+                EditorGUILayout.LabelField("他レイヤーで同じパスを制御している Clip", EditorStyles.miniBoldLabel);
+
+                if (GUILayout.Button("他レイヤー側からすべて削除", GUILayout.MinWidth(180)))
                 {
                     var anyRemoved = false;
                     if (entry.Targets != null)
@@ -169,7 +241,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                             foreach (var clip in target.Clips)
                             {
                                 if (clip == null) continue;
-                                if (RemoveBindingFromClip(clip, entry.Path, entry.PropertyName))
+                                if (RemoveBindingFromClip(clip, entry.Path, entry.PropertyName, "他レイヤー側から競合プロパティを削除"))
                                 {
                                     anyRemoved = true;
                                     toRemoveClips.Add((target, clip));
@@ -178,6 +250,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                             }
                         }
                     }
+
                     if (anyRemoved)
                     {
                         toRemoveEntries.Add(entry);
@@ -185,9 +258,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                         AnimationClipSelector.InvalidatePathConflictCache();
                     }
                 }
-                EditorGUILayout.EndHorizontal();
 
-                // コンフリクト先: レイヤーごとにインデント＋Boxで囲み、Clipはリスト表示（各クリックで選択）
                 if (entry.Targets != null)
                 {
                     foreach (var target in entry.Targets)
@@ -208,9 +279,10 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                                 SelectTransformAtPath(entry.Path);
                                 AnimationClipSelector.SetAnimationWindowToClip(clip);
                             }
-                            if (GUILayout.Button("削除", GUILayout.Width(40)))
+
+                            if (GUILayout.Button("この Clip から削除", GUILayout.Width(120)))
                             {
-                                if (RemoveBindingFromClip(clip, entry.Path, entry.PropertyName))
+                                if (RemoveBindingFromClip(clip, entry.Path, entry.PropertyName, "競合 Clip からプロパティを削除"))
                                 {
                                     toRemoveClips.Add((target, clip));
                                     EditorUtility.SetDirty(clip);
@@ -227,12 +299,41 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             EditorGUILayout.EndVertical();
         }
 
-        /// <summary>指定パス・プロパティ名に一致するバインディングをクリップから削除する。Undo対応。</summary>
-        private static bool RemoveBindingFromClip(AnimationClip clip, string path, string propertyName)
+        private List<ConflictTargetInfo> BuildFallbackSelfTargets()
+        {
+            if (_clip == null)
+                return new List<ConflictTargetInfo>();
+
+            return new List<ConflictTargetInfo>
+            {
+                new ConflictTargetInfo
+                {
+                    LayerName = "選択",
+                    Clips = new List<AnimationClip> { _clip }
+                }
+            };
+        }
+
+        private static bool RemoveBindingFromClips(IEnumerable<AnimationClip> clips, string path, string propertyName, string undoName)
+        {
+            var anyRemoved = false;
+            foreach (var clip in clips)
+            {
+                if (clip == null) continue;
+                if (!RemoveBindingFromClip(clip, path, propertyName, undoName))
+                    continue;
+                EditorUtility.SetDirty(clip);
+                anyRemoved = true;
+            }
+
+            return anyRemoved;
+        }
+
+        private static bool RemoveBindingFromClip(AnimationClip clip, string path, string propertyName, string undoName)
         {
             if (clip == null) return false;
 
-            Undo.RecordObject(clip, "コンフリクトプロパティを削除");
+            Undo.RecordObject(clip, undoName);
             var removed = false;
 
             foreach (var binding in AnimationUtility.GetCurveBindings(clip))
@@ -241,6 +342,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 AnimationUtility.SetEditorCurve(clip, binding, null);
                 removed = true;
             }
+
             foreach (var binding in AnimationUtility.GetObjectReferenceCurveBindings(clip))
             {
                 if (binding.path != path || binding.propertyName != propertyName) continue;
@@ -258,6 +360,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 Selection.activeGameObject = _root;
                 return;
             }
+
             var t = _root.transform.Find(path);
             if (t != null)
             {

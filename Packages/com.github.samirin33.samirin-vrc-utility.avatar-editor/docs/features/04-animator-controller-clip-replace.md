@@ -1,4 +1,4 @@
-# Animation Clip Replace
+# Animator Controller Clip Replace
 
 ## 概要
 
@@ -6,8 +6,8 @@
 
 ## 開き方
 
-- メニュー: **`samirin33 Editor Tools`** → **`Animation Clip Replace`**
-- ウィンドウタイトル: **Anim Clip Replace**
+- メニュー: **`samirin33 Editor Tools`** → **`Animator Controller Clip Replace`**
+- ウィンドウタイトル: **Controller Clip Replace**
 
 ## 使い方
 
@@ -32,4 +32,4 @@
 
 ## 関連
 
-- [Animation Clip Path Replace](03-animation-clip-path-replace.md) — クリップ**内のパス**の一括リネーム
+- [Animation Clip Binding Path Replace](03-animation-clip-binding-path-replace.md) — クリップ**内のパス**の一括リネーム

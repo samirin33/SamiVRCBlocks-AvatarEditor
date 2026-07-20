@@ -12,7 +12,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
     /// Unity 2022.3 ではタイミング系は <see cref="AnimatorStateTransition"/> のみ（Any State 遷移も同型）。
     /// <see cref="AnimatorTransition"/>（Entry 等）は条件のみが API 上取り扱える。
     /// <list type="bullet">
-    /// <item>グラフ上でトランジションを選択したうえで <c>samirin33 Editor Tools/Animator Binding/</c> から実行可能。</item>
+    /// <item>ショートカットまたは CONTEXT メニューから実行可能（トップメニューの Animator Binding/ は非表示）。</item>
     /// <item>インスペクター等でトランジションを右クリックしたときの CONTEXT メニューにも項目を追加。</item>
     /// </list>
     /// </summary>
@@ -284,42 +284,43 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         }
 
         // --- Animator ウィンドウでトランジションを選択した状態で使うトップメニュー ---
+        // メニュー表示は非表示（ショートカット・公開 API は継続）。必要なら MenuItem を復帰。
 
         private static bool IsAnyKnownTransition(Object o) => o is AnimatorTransitionBase;
 
-        [MenuItem(MenuToolsCopy, false, 106)]
+        // [MenuItem(MenuToolsCopy, false, 106)]
         private static void ToolsMenuCopy()
         {
             CopyFromSelection(null, IsAnyKnownTransition);
         }
 
-        [MenuItem(MenuToolsCopy, true)]
+        // [MenuItem(MenuToolsCopy, true)]
         private static bool ToolsMenuCopyValidate()
         {
             SyncMenuHotkeyDisplayFromShortcutSettings();
             return GetOrderedSelection(null, IsAnyKnownTransition).Count > 0;
         }
 
-        [MenuItem(MenuToolsPasteOverwrite, false, 107)]
+        // [MenuItem(MenuToolsPasteOverwrite, false, 107)]
         private static void ToolsMenuPasteOverwrite()
         {
             PasteToSelection(null, IsAnyKnownTransition, PasteMode.Overwrite);
         }
 
-        [MenuItem(MenuToolsPasteOverwrite, true)]
+        // [MenuItem(MenuToolsPasteOverwrite, true)]
         private static bool ToolsMenuPasteOverwriteValidate()
         {
             SyncMenuHotkeyDisplayFromShortcutSettings();
             return ValidatePaste(null, IsAnyKnownTransition);
         }
 
-        [MenuItem(MenuToolsPasteAdditive, false, 108)]
+        // [MenuItem(MenuToolsPasteAdditive, false, 108)]
         private static void ToolsMenuPasteAdditive()
         {
             PasteToSelection(null, IsAnyKnownTransition, PasteMode.Additive);
         }
 
-        [MenuItem(MenuToolsPasteAdditive, true)]
+        // [MenuItem(MenuToolsPasteAdditive, true)]
         private static bool ToolsMenuPasteAdditiveValidate()
         {
             SyncMenuHotkeyDisplayFromShortcutSettings();

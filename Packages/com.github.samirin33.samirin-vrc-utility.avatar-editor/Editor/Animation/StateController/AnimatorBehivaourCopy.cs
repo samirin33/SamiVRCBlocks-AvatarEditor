@@ -60,14 +60,19 @@ public static class AnimatorBehivaourCopy
         }
     }
 
-    /// <summary>同じステートに同じ型のBehaviourを新規追加して値をペースト</summary>
-    public static void PasteAsNew(AnimatorState state, Type behaviourType)
+    /// <summary>同じステートに、コピーした型のBehaviourを新規追加して値をペースト（型一致不要）</summary>
+    public static void PasteAsNew(AnimatorState state, Type behaviourType = null)
     {
-        if (state == null || behaviourType == null || !IsCopiedTypeMatch(behaviourType)) return;
-        if (!typeof(StateMachineBehaviour).IsAssignableFrom(behaviourType)) return;
+        if (state == null || !HasCopiedBehaviour) return;
+
+        var type = behaviourType;
+        if (type == null || !IsCopiedTypeMatch(type))
+            type = Type.GetType(CopiedTypeName ?? "", false);
+
+        if (type == null || !typeof(StateMachineBehaviour).IsAssignableFrom(type)) return;
         try
         {
-            var newBehaviour = state.AddStateMachineBehaviour(behaviourType);
+            var newBehaviour = state.AddStateMachineBehaviour(type);
             EditorJsonUtility.FromJsonOverwrite(CopiedJson, newBehaviour);
             var ctx = AnimatorController.FindStateMachineBehaviourContext(newBehaviour);
             if (ctx != null && ctx.Length > 0 && ctx[0].animatorController != null)
@@ -381,8 +386,7 @@ public static class AnimatorBehivaourCopy
     [MenuItem("CONTEXT/StateMachineBehaviour/Paste as New", true)]
     private static bool ContextPasteAsNewValidate(MenuCommand command)
     {
-        if (command.context is not StateMachineBehaviour b) return false;
-        return HasCopiedBehaviour && IsCopiedTypeMatch(b.GetType());
+        return command.context is StateMachineBehaviour && HasCopiedBehaviour;
     }
 
     [MenuItem("CONTEXT/StateMachineBehaviour/Paste Values", false, 302)]
@@ -455,11 +459,14 @@ internal sealed class StateMachineBehaviourCopyPasteEditor : Editor
 
         var hasCopy = AnimatorBehivaourCopy.HasCopiedBehaviour;
         var typeMatch = AnimatorBehivaourCopy.IsCopiedTypeMatch(behaviour.GetType());
-        var canPaste = hasCopy && typeMatch;
 
-        if (canPaste)
-        {
+        if (hasCopy)
             menu.AddItem(new GUIContent("Paste as New"), false, () => PasteAsNewAtState(behaviour));
+        else
+            menu.AddDisabledItem(new GUIContent("Paste as New"));
+
+        if (hasCopy && typeMatch)
+        {
             menu.AddItem(new GUIContent("Paste Values"), false, () =>
             {
                 Undo.RecordObject(behaviour, "Paste StateMachineBehaviour Values");
@@ -468,7 +475,6 @@ internal sealed class StateMachineBehaviourCopyPasteEditor : Editor
         }
         else
         {
-            menu.AddDisabledItem(new GUIContent("Paste as New"));
             menu.AddDisabledItem(new GUIContent("Paste Values"));
         }
 

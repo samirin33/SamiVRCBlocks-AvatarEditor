@@ -15,7 +15,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
         private int _targetFrameRate;
 
-        [MenuItem("samirin33 Editor Tools/FPS Limiter")]
+        [MenuItem("samirin33 Editor Tools/Performance/FPS Limiter", false, 8)]
         public static void Open()
         {
             var w = GetWindow<FPSLimiterWindow>(false, "FPS Limiter", true);

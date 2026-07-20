@@ -7,7 +7,7 @@ using Samirin33.Editor;
 
 namespace Samirin33.AvatarEditor.Animation.Editor
 {
-    public class AnimationClipReplaceEditor : EditorWindow
+    public class AnimatorControllerClipReplaceEditor : EditorWindow
     {
         private enum TargetSource
         {
@@ -22,10 +22,10 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         private AnimationClip _replacementClip;
         private int _previewMatchCount = -1;
 
-        [MenuItem("samirin33 Editor Tools/Animation Clip Replace")]
+        [MenuItem("samirin33 Editor Tools/Animation/Animator Controller Clip Replace", false, 5)]
         public static void Open()
         {
-            var window = GetWindow<AnimationClipReplaceEditor>("Anim Clip Replace");
+            var window = GetWindow<AnimatorControllerClipReplaceEditor>("Controller Clip Replace");
             window.minSize = new Vector2(360, 280);
         }
 
@@ -135,7 +135,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
             int replacedCount = 0;
 
-            Undo.RecordObject(controller, "Animation Clip Replace");
+            Undo.RecordObject(controller, "Animator Controller Clip Replace");
 
             foreach (var layer in controller.layers)
             {
@@ -146,7 +146,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             AssetDatabase.SaveAssets();
 
             _previewMatchCount = -1;
-            Debug.Log($"[AnimationClipReplace] {replacedCount} 件のClipを置換しました。");
+            Debug.Log($"[AnimatorControllerClipReplace] {replacedCount} 件のClipを置換しました。");
         }
 
         private static int CountMatchingReferences(AnimatorController controller, AnimationClip sourceClip)
@@ -220,7 +220,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
             if (state.motion == sourceClip)
             {
-                Undo.RecordObject(state, "Animation Clip Replace");
+                Undo.RecordObject(state, "Animator Controller Clip Replace");
                 state.motion = replacementClip;
                 count++;
             }
@@ -255,7 +255,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
             if (indicesToReplace.Count > 0)
             {
-                Undo.RecordObject(blendTree, "Animation Clip Replace");
+                Undo.RecordObject(blendTree, "Animator Controller Clip Replace");
                 var so = new SerializedObject(blendTree);
                 var childrenProp = so.FindProperty("m_Childs") ?? so.FindProperty("m_ChildMotions");
                 if (childrenProp != null)

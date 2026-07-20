@@ -908,40 +908,40 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             SyncMenuHotkeysFromCurrentShortcutSettings();
         }
 
-        [MenuItem(MenuPathConvergeToLast, true)]
+        // [MenuItem(MenuPathConvergeToLast, true)]
         private static bool ValidateMenuConvergeToLast()
         {
             SyncMenuHotkeysFromCurrentShortcutSettings();
             return true;
         }
 
-        [MenuItem(MenuPathConvergeToLast, false, 110)]
+        // [MenuItem(MenuPathConvergeToLast, false, 110)]
         public static void MenuConvergeToLast()
         {
             TryNewTransitionConvergeToLast();
         }
 
-        [MenuItem(MenuPathDivergeFromFirst, true)]
+        // [MenuItem(MenuPathDivergeFromFirst, true)]
         private static bool ValidateMenuDivergeFromFirst()
         {
             SyncMenuHotkeysFromCurrentShortcutSettings();
             return true;
         }
 
-        [MenuItem(MenuPathDivergeFromFirst, false, 111)]
+        // [MenuItem(MenuPathDivergeFromFirst, false, 111)]
         public static void MenuDivergeFromFirst()
         {
             TryNewTransitionDivergeFromFirst();
         }
 
-        [MenuItem(MenuPathNewStateAtCenter, true)]
+        // [MenuItem(MenuPathNewStateAtCenter, true)]
         private static bool ValidateMenuNewStateAtCursor()
         {
             SyncMenuHotkeysFromCurrentShortcutSettings();
             return true;
         }
 
-        [MenuItem(MenuPathNewStateAtCenter, false, 112)]
+        // [MenuItem(MenuPathNewStateAtCenter, false, 112)]
         public static void MenuNewStateAtCursor()
         {
             TryCreateNewStateAtCursor();
@@ -954,7 +954,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuPathNewStateAtCenter, ShortcutIds.NewStateAtCursor);
         }
 
-        [MenuItem("samirin33 Editor Tools/Animator Binding (Shortcuts)", false, 109)]
+        [MenuItem("samirin33 Editor Tools/Settings/Animator Binding", false, 10)]
         public static void OpenAnimatorBindingPreferences()
         {
 #if UNITY_2022_2_OR_NEWER

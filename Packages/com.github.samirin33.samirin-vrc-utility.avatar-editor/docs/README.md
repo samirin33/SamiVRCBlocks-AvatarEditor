@@ -8,8 +8,8 @@
 |---|----------|--------|
 | 01 | [01-animator-default-setting.md](features/01-animator-default-setting.md) | Animator デフォルト設定 |
 | 02 | [02-animator-behaviour-copy.md](features/02-animator-behaviour-copy.md) | Animator Behaviour コピー・ペースト |
-| 03 | [03-animation-clip-path-replace.md](features/03-animation-clip-path-replace.md) | Animation Clip Path Replace |
-| 04 | [04-animation-clip-replace.md](features/04-animation-clip-replace.md) | Animation Clip Replace |
+| 03 | [03-animation-clip-binding-path-replace.md](features/03-animation-clip-binding-path-replace.md) | Animation Clip Binding Path Replace |
+| 04 | [04-animator-controller-clip-replace.md](features/04-animator-controller-clip-replace.md) | Animator Controller Clip Replace |
 | 05 | [05-vrc-avatar-param-setter.md](features/05-vrc-avatar-param-setter.md) | VRChat Avatar Param Setter |
 | 06 | [06-animation-clip-selector.md](features/06-animation-clip-selector.md) | Animation Clip Selector |
 | 07 | [07-fps-limiter.md](features/07-fps-limiter.md) | FPS LImiter |

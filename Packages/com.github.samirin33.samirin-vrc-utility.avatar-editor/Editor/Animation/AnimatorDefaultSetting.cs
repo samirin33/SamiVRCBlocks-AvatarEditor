@@ -45,6 +45,8 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         private const string ProxyEmptyAnimPath = "Packages/com.vrchat.avatars/Samples/AV3 Demo Assets/Animation/ProxyAnim/proxy_empty.anim";
         private static readonly HashSet<int> ScriptAppliedStateInstanceIds = new HashSet<int>();
         private static readonly HashSet<int> ScriptAppliedTransitionInstanceIds = new HashSet<int>();
+        /// <summary>ステート＋トランジションのコピペ直後は、続く Change イベントでもデフォルト適用を抑止する。</summary>
+        private static double _graphPasteGraceUntil;
 
         public static bool Enabled
         {
@@ -174,64 +176,98 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         {
             if (!Enabled) return;
 
+            // 同一ストリーム内の複数ステート／トランジション作成はコピペ・複製とみなし、
+            // デフォルト上書きで Has Exit Time 等が消えないようにする。
+            var createdStateIds = new List<int>();
+            var createdTransitionIds = new List<int>();
+            var createdStateMachineIds = new List<int>();
+            var changedTransitionIds = new List<int>();
+
             for (int i = 0; i < stream.length; i++)
             {
                 var kind = stream.GetEventType(i);
-
                 if (kind == ObjectChangeKind.CreateAssetObject)
                 {
                     stream.GetCreateAssetObjectEvent(i, out var args);
                     var obj = EditorUtility.InstanceIDToObject(args.instanceId);
-                    var instanceId = args.instanceId;
-
                     if (obj is AnimatorState)
-                    {
-                        EditorApplication.delayCall += () =>
-                        {
-                            if (ConsumeSuppressedInstanceId(ScriptAppliedStateInstanceIds, instanceId)) return;
-                            var state = EditorUtility.InstanceIDToObject(instanceId) as AnimatorState;
-                            ApplyDefaultsToState(state);
-                        };
-                    }
+                        createdStateIds.Add(args.instanceId);
                     else if (obj is AnimatorStateTransition)
-                    {
-                        // エディタの「Make Transition」等で付く Unity 初期値はバージョンにより異なり、
-                        // ShouldApplyDefaultsToTransition だけでは検知できないことがある。新規サブアセット作成なので prefs をそのまま適用する。
-                        EditorApplication.delayCall += () =>
-                        {
-                            if (ConsumeSuppressedInstanceId(ScriptAppliedTransitionInstanceIds, instanceId)) return;
-                            var tr = EditorUtility.InstanceIDToObject(instanceId) as AnimatorStateTransition;
-                            ApplyDefaultsToTransition(tr, requireFreshUnityDefaults: false);
-                        };
-                    }
+                        createdTransitionIds.Add(args.instanceId);
                     else if (obj is AnimatorStateMachine)
-                    {
-                        EditorApplication.delayCall += () =>
-                        {
-                            var sm = EditorUtility.InstanceIDToObject(instanceId) as AnimatorStateMachine;
-                            ApplyDefaultsToNewLayer(sm);
-                        };
-                    }
-
-                    continue;
+                        createdStateMachineIds.Add(args.instanceId);
                 }
-
-                // 「Make Transition」等でサブアセットの Create が報告されず、プロパティ変更のみ流れる場合がある。
-                if (kind == ObjectChangeKind.ChangeAssetObjectProperties)
+                else if (kind == ObjectChangeKind.ChangeAssetObjectProperties)
                 {
                     stream.GetChangeAssetObjectPropertiesEvent(i, out var changeArgs);
-                    var instanceId = changeArgs.instanceId;
-                    var obj = EditorUtility.InstanceIDToObject(instanceId);
-                    if (obj is AnimatorStateTransition)
-                    {
-                        EditorApplication.delayCall += () =>
-                        {
-                            if (ConsumeSuppressedInstanceId(ScriptAppliedTransitionInstanceIds, instanceId)) return;
-                            var tr = EditorUtility.InstanceIDToObject(instanceId) as AnimatorStateTransition;
-                            ApplyDefaultsToTransition(tr, requireFreshUnityDefaults: true);
-                        };
-                    }
+                    if (EditorUtility.InstanceIDToObject(changeArgs.instanceId) is AnimatorStateTransition)
+                        changedTransitionIds.Add(changeArgs.instanceId);
                 }
+            }
+
+            var isGraphPasteOrDuplicate =
+                (createdStateIds.Count >= 1 && createdTransitionIds.Count >= 1)
+                || createdStateIds.Count > 1
+                || createdTransitionIds.Count > 1;
+
+            if (isGraphPasteOrDuplicate)
+                _graphPasteGraceUntil = EditorApplication.timeSinceStartup + 0.75;
+
+            var skipTransitionAutoDefaults = isGraphPasteOrDuplicate
+                || EditorApplication.timeSinceStartup < _graphPasteGraceUntil;
+
+            foreach (var instanceId in createdStateIds)
+            {
+                var id = instanceId;
+                EditorApplication.delayCall += () =>
+                {
+                    if (ConsumeSuppressedInstanceId(ScriptAppliedStateInstanceIds, id)) return;
+                    // グラフのコピペ／複製では既存設定を維持する
+                    if (isGraphPasteOrDuplicate) return;
+                    var state = EditorUtility.InstanceIDToObject(id) as AnimatorState;
+                    ApplyDefaultsToState(state);
+                };
+            }
+
+            foreach (var instanceId in createdTransitionIds)
+            {
+                var id = instanceId;
+                EditorApplication.delayCall += () =>
+                {
+                    if (ConsumeSuppressedInstanceId(ScriptAppliedTransitionInstanceIds, id)) return;
+                    if (skipTransitionAutoDefaults
+                        || EditorApplication.timeSinceStartup < _graphPasteGraceUntil)
+                        return;
+                    var tr = EditorUtility.InstanceIDToObject(id) as AnimatorStateTransition;
+                    // Make Transition 等の単発作成のみ。Unity 初期値のばらつきに備え fresh 判定は緩める。
+                    ApplyDefaultsToTransition(tr, requireFreshUnityDefaults: false);
+                };
+            }
+
+            foreach (var instanceId in createdStateMachineIds)
+            {
+                var id = instanceId;
+                EditorApplication.delayCall += () =>
+                {
+                    var sm = EditorUtility.InstanceIDToObject(id) as AnimatorStateMachine;
+                    ApplyDefaultsToNewLayer(sm);
+                };
+            }
+
+            // コピペ直後のプロパティ反映ではデフォルト適用しない
+            if (skipTransitionAutoDefaults)
+                return;
+
+            foreach (var instanceId in changedTransitionIds)
+            {
+                var id = instanceId;
+                EditorApplication.delayCall += () =>
+                {
+                    if (ConsumeSuppressedInstanceId(ScriptAppliedTransitionInstanceIds, id)) return;
+                    if (EditorApplication.timeSinceStartup < _graphPasteGraceUntil) return;
+                    var tr = EditorUtility.InstanceIDToObject(id) as AnimatorStateTransition;
+                    ApplyDefaultsToTransition(tr, requireFreshUnityDefaults: true);
+                };
             }
         }
 #endif
@@ -404,6 +440,9 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         private static bool ShouldApplyDefaultsToTransition(AnimatorStateTransition transition)
         {
             if (transition == null) return false;
+            // 条件付きはユーザー設定済み／コピペ済みとみなす
+            if (transition.conditions != null && transition.conditions.Length > 0)
+                return false;
             if (transition.hasFixedDuration != true) return false;
             if (!Mathf.Approximately(transition.offset, 0f)) return false;
 
@@ -471,7 +510,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             }
         }
 
-        [MenuItem("samirin33 Editor Tools/Animator Default Setting", false, 100)]
+        [MenuItem("samirin33 Editor Tools/Settings/Animator Default Setting", false, 9)]
         private static void OpenSettings()
         {
 #if UNITY_2022_2_OR_NEWER

@@ -30,7 +30,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         bool _otherFoldout = true;
         bool _notesFoldout = true;
 
-        [MenuItem("samirin33 Editor Tools/VN3 License Generator", false, 101)]
+        [MenuItem("samirin33 Editor Tools/File/VN3 License Generator", false, 1)]
         public static void Open()
         {
             var w = GetWindow<VN3LicenseEditorWindow>(false, "VN3 License", true);
@@ -227,11 +227,11 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
 
                     EditorGUILayout.Space(4);
                 }
-            finally
-            {
-                EditorGUIUtility.labelWidth = prevLabelWidth;
-            }
-            EditorGUILayout.EndScrollView();
+                finally
+                {
+                    EditorGUIUtility.labelWidth = prevLabelWidth;
+                }
+                EditorGUILayout.EndScrollView();
             }, new Rect(0, 0, position.width, position.height));
         }
     }

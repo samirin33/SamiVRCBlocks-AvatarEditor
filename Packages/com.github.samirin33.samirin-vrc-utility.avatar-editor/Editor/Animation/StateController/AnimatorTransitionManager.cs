@@ -183,7 +183,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             EditorGUILayout.HelpBox(message, messageType, true);
         }
 
-        [MenuItem("samirin33 Editor Tools/AnimatorStateController", false, 110)]
+        [MenuItem("samirin33 Editor Tools/Animation/AnimatorStateController", false, 3)]
         public static void Open()
         {
             var window = GetWindow<AnimatorTransitionManager>("AnimatorStateController");

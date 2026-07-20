@@ -1,4 +1,4 @@
-# Animation Clip Path Replace
+# Animation Clip Binding Path Replace
 
 ## 概要
 
@@ -6,8 +6,8 @@
 
 ## 開き方
 
-- メニュー: **`samirin33 Editor Tools`** → **`Animation Clip Path Replace`**
-- ウィンドウタイトル: **Anim Path Replace**
+- メニュー: **`samirin33 Editor Tools`** → **`Animation Clip Binding Path Replace`**
+- ウィンドウタイトル: **Clip Binding Path Replace**
 
 ## 使い方
 
@@ -18,9 +18,10 @@
    - **ディレクトリ**: フォルダを指定し、その中のクリップを一括対象にする
 2. **置換ルール**を設定
    - **パス（文字列）**: 「置換元」「置換後」の文字列を入力
-   - **Transform 参照**: シーン内の Transform を「置換後」に指定し、そのパスを使う
-3. **プレビュー**で該当バインド数を確認
-4. **実行**ボタンで一括置換
+   - **Transform 参照**: シーン内の Transform を「置換後」に指定すると、文字列フィールドと自動同期されます
+3. **実行**ボタンで一括置換
+
+前回の指定内容（対象の指定方法、クリップ配列、フォルダ、置換ルール）は EditorPrefs に保存され、ウィンドウを開き直しても復元されます。ディレクトリ指定の場合は、保存されていたフォルダを復元したうえで Clip を自動再取得します。
 
 ## 注意事項
 
@@ -29,4 +30,5 @@
 
 ## 関連
 
-- [Animation Clip Replace](04-animation-clip-replace.md) — クリップ**参照**の一括置換（Controller 内）
+- [Animation Clip Selector](06-animation-clip-selector.md) — Missing バインディング検出からの連携
+- [Animator Controller Clip Replace](04-animator-controller-clip-replace.md) — クリップ**参照**の一括置換（Controller 内）

@@ -26,6 +26,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
     public class AnimationClipSelectorSettings : ScriptableObject
     {
         [SerializeField] private float _itemSpacing = 2f;
+        [SerializeField] private bool _showBlendTreeNested = true;
         [SerializeField] private List<ControllerClipEntry> _lastDisplayedClipPerController = new List<ControllerClipEntry>();
         [SerializeField] private List<AnimationClip> _ignoreClips = new List<AnimationClip>();
         [SerializeField] private List<string> _defaultIgnoreGUIDs = new List<string> { "4de039275b65be24c8f0a641d7a44924" };
@@ -35,6 +36,13 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         {
             get => _itemSpacing;
             set => _itemSpacing = Mathf.Clamp(value, 0f, 16f);
+        }
+
+        /// <summary>BlendTree を入れ子の折りたたみグループとして表示するか。</summary>
+        public bool ShowBlendTreeNested
+        {
+            get => _showBlendTreeNested;
+            set => _showBlendTreeNested = value;
         }
 
         /// <summary>競合警告を出さない AnimationClip 一覧。</summary>

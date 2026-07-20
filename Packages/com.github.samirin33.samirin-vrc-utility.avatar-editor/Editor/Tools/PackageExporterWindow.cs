@@ -31,7 +31,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         bool _releasesFoldout = true;
         bool _relatedFoldersFoldout = true;
 
-        [MenuItem("samirin33 Editor Tools/Package Exporter", false, 100)]
+        [MenuItem("samirin33 Editor Tools/File/Package Exporter", false, 0)]
         public static void Open()
         {
             var w = GetWindow<PackageExporterWindow>(false, "Package Exporter", true);

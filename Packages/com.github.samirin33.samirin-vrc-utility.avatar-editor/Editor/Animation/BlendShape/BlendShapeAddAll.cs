@@ -13,9 +13,9 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
     /// </summary>
     public class BlendShapeAddAll : EditorWindow
     {
-        private const string MenuPath = "samirin33 Editor Tools/BlendShapeAddAll";
+        private const string MenuPath = "samirin33 Editor Tools/Animation/BlendShapeAddAll";
 
-        [MenuItem(MenuPath, priority = 120)]
+        [MenuItem(MenuPath, priority = 6)]
         public static void Open()
         {
             var w = GetWindow<BlendShapeAddAll>(false, "BlendShape キー追加", true);
