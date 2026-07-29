@@ -58,8 +58,7 @@ sysinfo.txt
 # Builds
 *.apk
 *.unitypackage
-# Avatar Installer 同梱物（CI の create-unitypackage に必要）
-!Packages/com.github.samirin33.samivrcblocks-avatar-editor/Editor/AvatarInstaller/AvatarsInstaller.unitypackage
+!Packages/com.github.samirin33.samivrcblocks-avatar-editor/Editor/SamiVRCBlocksAvatarInstaller/SamiVRCBlocksAvatarInstaller.unitypackage
 
 # Crashlytics generated file
 crashlytics-build.properties
