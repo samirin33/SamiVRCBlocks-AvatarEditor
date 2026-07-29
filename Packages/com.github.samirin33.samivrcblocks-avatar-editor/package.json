@@ -1,0 +1,24 @@
+{
+  "name": "com.github.samirin33.samivrcblocks-avatar-editor",
+  "displayName": "SamiVRCBlocks-AvatarEditor",
+  "version": "0.4.2",
+  "unity": "2022.3",
+  "description": "SamiVRCBlocks-AvatarEditor: Editor tools for VRChat Avatar 3.0 (Animator, AnimationClip, parameters).",
+  "author": {
+    "name": "samirin33",
+    "url": "https://github.com/samirin33"
+  },
+  "url": "https://github.com/samirin33/SamiVRCBlocks-AvatarEditor",
+  "documentationUrl": "https://github.com/samirin33/SamiVRCBlocks-AvatarEditor/tree/main/Packages/com.github.samirin33.samivrcblocks-avatar-editor/docs",
+  "changelogUrl": "https://github.com/samirin33/SamiVRCBlocks-AvatarEditor/releases",
+  "vpmDependencies": {
+    "com.vrchat.avatars": ">=3.7.0",
+    "com.github.samirin33.samivrcblocks-avatar": ">=0.2.5"
+  },
+  "legacyFolders": {
+    "Assets\\samirin33\\SamirinVRCUtility Avatar Editor": "",
+    "Assets\\samirin33\\SAMIBlocks Avatar Editor": "",
+    "Assets\\samirin33\\SamiVRCBlocks-AvatarEditor": ""
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,20 @@
+{
+    "name": "com.github.samirin33.samivrcblocks-avatar-editor.editor",
+    "rootNamespace": "",
+    "references": [
+        "com.github.samirin33.samivrcblocks-avatar-editor.runtime",
+        "com.github.samirin33.samivrcblocks-avatar.editor",
+        "VRC.SDK3.Dynamics.Constraint"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

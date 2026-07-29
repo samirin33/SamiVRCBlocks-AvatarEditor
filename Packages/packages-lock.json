@@ -1,13 +1,13 @@
 {
   "dependencies": {
-    "com.github.samirin33.samirin-vrc-utility.avatar-editor": {
-      "version": "file:com.github.samirin33.samirin-vrc-utility.avatar-editor",
+    "com.github.samirin33.samivrcblocks-avatar-editor": {
+      "version": "file:com.github.samirin33.samivrcblocks-avatar-editor",
       "depth": 0,
       "source": "embedded",
       "dependencies": {}
     },
-    "com.github.samirin33.samirin-vrc-utility.avatars": {
-      "version": "file:com.github.samirin33.samirin-vrc-utility.avatars",
+    "com.github.samirin33.samivrcblocks-avatar": {
+      "version": "file:com.github.samirin33.samivrcblocks-avatar",
       "depth": 0,
       "source": "embedded",
       "dependencies": {}
