@@ -58,7 +58,7 @@ sysinfo.txt
 # Builds
 *.apk
 *.unitypackage
-!Packages/com.github.samirin33.samivrcblocks-avatar-editor/Editor/SamiVRCBlocksAvatarInstaller/SamiVRCBlocksAvatarInstaller.unitypackage
+!Packages/com.github.samirin33.samivrcblocks-avatar-editor/Editor/SamiVRCBlocksAvatarInstaller/SamiVRCBlocksInstaller.unitypackage
 
 # Crashlytics generated file
 crashlytics-build.properties
