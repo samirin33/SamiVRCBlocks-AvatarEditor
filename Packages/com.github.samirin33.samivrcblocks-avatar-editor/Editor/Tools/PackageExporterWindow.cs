@@ -4,16 +4,16 @@ using UnityEditor;
 using UnityEngine;
 using Samirin33.Editor;
 
-namespace Samirin.VRCUtility.AvatarEditor.Editor
+namespace SamiVRCBlocksAvatar.Editor
 {
     public class PackageExporterWindow : EditorWindow
     {
-        const string EditorPrefsKeyOutputDirectory = "Samirin.VRCUtility.AvatarEditor.PackageExporter.OutputDirectory";
-        const string EditorPrefsKeySourceFolder = "Samirin.VRCUtility.AvatarEditor.PackageExporter.SourceFolder";
-        const string EditorPrefsKeyOverwrite = "Samirin.VRCUtility.AvatarEditor.PackageExporter.Overwrite";
-        const string EditorPrefsKeyIncludeInstaller = "Samirin.VRCUtility.AvatarEditor.PackageExporter.IncludeInstaller";
+        const string EditorPrefsKeyOutputDirectory = "SamiVRCBlocksAvatar.PackageExporter.OutputDirectory";
+        const string EditorPrefsKeySourceFolder = "SamiVRCBlocksAvatar.PackageExporter.SourceFolder";
+        const string EditorPrefsKeyOverwrite = "SamiVRCBlocksAvatar.PackageExporter.Overwrite";
+        const string EditorPrefsKeyIncludeInstaller = "SamiVRCBlocksAvatar.PackageExporter.IncludeInstaller";
         const string EditorPrefsKeyIncludeBoothManagerInstaller =
-            "Samirin.VRCUtility.AvatarEditor.PackageExporter.IncludeBoothManagerInstaller";
+            "SamiVRCBlocksAvatar.PackageExporter.IncludeBoothManagerInstaller";
 
         string _sourceFolderPath = "";
         DefaultAsset _sourceFolderAsset;
@@ -295,9 +295,9 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                     EditorGUILayout.Space(6);
 
                     // Installer フォルダを含めるか（EditorPrefs）
-                    _includeInstaller = EditorGUILayout.ToggleLeft("パッケージに「AvatarInstaller」を含める", _includeInstaller);
+                    _includeInstaller = EditorGUILayout.ToggleLeft("パッケージに「SamiVRCBlocksAvatarInstaller」を含める", _includeInstaller);
                     SamirinEditorStyleHelper.DrawHelpBoxWithDefaultFont(
-                        "有効にすると Assets/AvatarInstaller として同梱されます。導入先でも Assets に展開され、SamiVRCBlocks-Avatar 関連スクリプトを使えるようになります。",
+                        "有効にすると Assets/SamiVRCBlocksAvatarInstaller として同梱されます。導入先でも Assets に展開され、SamiVRCBlocks-Avatar 関連スクリプトを使えるようになります。",
                         MessageType.Info);
 
                     // Assets/samirin33 配下のときだけ BoothManager インストーラ同梱オプションを表示

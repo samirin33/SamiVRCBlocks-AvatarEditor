@@ -4,7 +4,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 
-namespace Samirin.VRCUtility.AvatarEditor.Editor
+namespace SamiVRCBlocksAvatar.Editor
 {
     public static class PackageExporter
     {
@@ -312,7 +312,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         /// <param name="version">x.x.x 形式</param>
         /// <param name="outputDirectory">出力先ディレクトリ（フルパス）</param>
         /// <param name="overwrite">既存ファイルを上書きするか</param>
-        /// <param name="includeInstallerFolder">AvatarInstaller を Assets へ一時配置してパッケージに含めるか</param>
+        /// <param name="includeInstallerFolder">SamiVRCBlocksAvatarInstaller を Assets へ一時配置してパッケージに含めるか</param>
         /// <param name="includeBoothManagerInstaller">SamirinBoothManagerInstaller をパッケージに同梱するか（samirin33 配下向け）</param>
         /// <returns>成功した場合の出力ファイルパス。失敗時は null。</returns>
         public static string ExportPackage(
@@ -350,12 +350,12 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                 {
                     cleanupInstaller = true;
 
-                    // Packages 原本は残し、Assets/AvatarInstaller へ一時コピーして同梱する
-                    // → インポート時も Assets/AvatarInstaller として展開される
+                    // Packages/.../SamiVRCBlocksAvatarInstaller 原本は残し、Assets/SamiVRCBlocksAvatarInstaller へ一時コピーして同梱する
+                    // → インポート時も Assets/SamiVRCBlocksAvatarInstaller として展開される
                     if (!InstallerImport.StageInstallerToAssets())
                     {
                         Debug.LogError(
-                            "[PackageExporter] AvatarInstaller の配置に失敗しました。" +
+                            "[PackageExporter] SamiVRCBlocksAvatarInstaller の配置に失敗しました。" +
                             $" {InstallerImport.InstallerSourceFolderPackageRelative} を確認してください。");
                         return null;
                     }
@@ -370,8 +370,8 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
 
                     // 編集用（defineConstraints 付き）asmdef が混入していたら除外
                     installerPaths.RemoveAll(p =>
-                        p.EndsWith("AvatarInstaller.Source.asmdef", System.StringComparison.OrdinalIgnoreCase) ||
-                        p.EndsWith("AvatarInstaller.Source.asmdef.meta", System.StringComparison.OrdinalIgnoreCase) ||
+                        p.EndsWith("SamiVRCBlocksAvatar.Installer.Source.asmdef", System.StringComparison.OrdinalIgnoreCase) ||
+                        p.EndsWith("SamiVRCBlocksAvatar.Installer.Source.asmdef.meta", System.StringComparison.OrdinalIgnoreCase) ||
                         p.IndexOf(".Source.asmdef", System.StringComparison.OrdinalIgnoreCase) >= 0);
 
                     if (installerPaths.Count == 0)
@@ -395,7 +395,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                         if (!set.Contains(p)) { set.Add(p); paths.Add(p); }
                     }
 
-                    Debug.Log($"[PackageExporter] AvatarInstaller を含めます ({installerPaths.Count} assets): " + string.Join(", ", installerPaths));
+                    Debug.Log($"[PackageExporter] SamiVRCBlocksAvatarInstaller を含めます ({installerPaths.Count} assets): " + string.Join(", ", installerPaths));
                 }
 
                 if (includeBoothManagerInstaller)

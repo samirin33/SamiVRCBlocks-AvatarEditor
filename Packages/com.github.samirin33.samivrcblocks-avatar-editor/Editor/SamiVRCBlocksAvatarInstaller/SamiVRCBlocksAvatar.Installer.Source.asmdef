@@ -1,0 +1,18 @@
+{
+    "name": "SamiVRCBlocksAvatar.Installer.Source",
+    "rootNamespace": "",
+    "references": [],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "SAMIRIN_INSTALLER_SOURCE_COMPILE"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

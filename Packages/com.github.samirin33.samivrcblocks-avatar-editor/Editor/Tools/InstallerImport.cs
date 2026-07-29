@@ -1,31 +1,35 @@
 #if UNITY_EDITOR
 using System.IO;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
-namespace Samirin.VRCUtility.AvatarEditor.Editor
+namespace SamiVRCBlocksAvatar.Editor
 {
     /// <summary>
-    /// Packages/.../Editor/AvatarInstaller を、エクスポート時だけ Assets/AvatarInstaller へ一時配置する。
-    /// パッケージに Assets パスで含めることで、インポート先でも Assets/AvatarInstaller として展開される。
+    /// Packages/.../Editor/SamiVRCBlocksAvatarInstaller を、エクスポート時だけ Assets/SamiVRCBlocksAvatarInstaller へ一時配置する。
+    /// パッケージに Assets パスで含めることで、インポート先でも Assets/SamiVRCBlocksAvatarInstaller として展開される。
     /// </summary>
     public static class InstallerImport
     {
-        public const string InstallerFolderName = "AvatarInstaller";
+        /// <summary>配布・ステージ先フォルダ名（Assets 配下）。</summary>
+        public const string InstallerFolderName = "SamiVRCBlocksAvatarInstaller";
+        /// <summary>Packages 上の編集用ソースフォルダ名。</summary>
+        public const string InstallerSourceFolderName = "SamiVRCBlocksAvatarInstaller";
         public const string InstallerFolderAssetPath = "Assets/" + InstallerFolderName;
-        public const string InstallerEditorScriptFileName = "SamirinVRCUtilityAvatarInstallerEditor.cs";
-        public const string InstallerUnityPackageFileName = "AvatarsInstaller.unitypackage";
+        public const string InstallerEditorScriptFileName = "SamiVRCBlocksAvatarInstallerEditor.cs";
+        public const string InstallerUnityPackageFileName = "SamiVRCBlocksInstaller.unitypackage";
 
-        /// <summary>編集用ソース（Packages/.../Editor/AvatarInstaller）</summary>
+        /// <summary>編集用ソース（Packages/.../Editor/SamiVRCBlocksAvatarInstaller）</summary>
         public const string InstallerSourceFolderPackageRelative =
-            "Packages/com.github.samirin33.samivrcblocks-avatar-editor/Editor/" + InstallerFolderName;
+            "Packages/com.github.samirin33.samivrcblocks-avatar-editor/Editor/" + InstallerSourceFolderName;
 
         /// <summary>配布用に同梱する Editor 専用 asmdef（ソース用 asmdef は defineConstraints 付きのため別物）。</summary>
-        const string DistributionAsmdefFileName = "Samirin.VRCUtility.AvatarInstaller.asmdef";
+        const string DistributionAsmdefFileName = "SamiVRCBlocksAvatar.Installer.asmdef";
 
         const string DistributionAsmdefJson =
             "{\n" +
-            "    \"name\": \"Samirin.VRCUtility.AvatarInstaller\",\n" +
+            "    \"name\": \"SamiVRCBlocksAvatar.Installer\",\n" +
             "    \"rootNamespace\": \"\",\n" +
             "    \"references\": [],\n" +
             "    \"includePlatforms\": [\n" +
@@ -40,6 +44,10 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
             "    \"versionDefines\": [],\n" +
             "    \"noEngineReferences\": false\n" +
             "}\n";
+
+        static readonly Regex TargetAssetGuidRegex = new Regex(
+            @"(private\s+const\s+string\s+TargetAssetGUID\s*=\s*"")([0-9a-fA-F]{32})("")",
+            RegexOptions.Compiled);
 
         [MenuItem("Tools/SamiVRCBlocksAvatar/Avatar Installer/Stage To Assets")]
         private static void StageToAssetsMenu()
@@ -78,7 +86,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
             var projectPath = Directory.GetParent(Application.dataPath)?.FullName;
             if (string.IsNullOrEmpty(projectPath)) return null;
             return Path.Combine(projectPath, "Packages",
-                "com.github.samirin33.samivrcblocks-avatar-editor", "Editor", InstallerFolderName);
+                "com.github.samirin33.samivrcblocks-avatar-editor", "Editor", InstallerSourceFolderName);
         }
 
         public static bool IsSourceFolderComplete()
@@ -90,8 +98,9 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         }
 
         /// <summary>
-        /// Packages 上の編集用ソースを Assets/AvatarInstaller へコピーする（原本は Packages に残す）。
+        /// Packages 上の編集用ソースを Assets/SamiVRCBlocksAvatarInstaller へコピーする（原本は Packages に残す）。
         /// 編集用 asmdef は配布に含めず、Editor 専用の配布用 asmdef を書き出す。
+        /// ステージ先 unitypackage には固有 GUID を割り当て、Installer スクリプトの TargetAssetGUID に反映する。
         /// </summary>
         public static bool StageInstallerToAssets()
         {
@@ -124,7 +133,31 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                         name.EndsWith(".asmdef.meta", System.StringComparison.OrdinalIgnoreCase))
                         continue;
 
+                    // Packages 側 GUID 衝突を避けるため .meta はコピーしない（後で固有 GUID を割り当てる）
+                    if (name.EndsWith(".meta", System.StringComparison.OrdinalIgnoreCase))
+                        continue;
+
                     File.Copy(file, Path.Combine(destFull, name), true);
+                }
+
+                var unityPackageFullPath = Path.Combine(destFull, InstallerUnityPackageFileName);
+                if (!File.Exists(unityPackageFullPath))
+                {
+                    Debug.LogError($"[SamiVRCBlocksAvatar] {InstallerUnityPackageFileName} がステージに含まれていません。");
+                    return false;
+                }
+
+                // 仮展開先 unitypackage 専用 GUID を発行し、スクリプトの TargetAssetGUID に埋め込む
+                var stagedUnityPackageGuid = GUID.Generate().ToString();
+                WriteDefaultImporterMeta(unityPackageFullPath + ".meta", stagedUnityPackageGuid);
+
+                var stagedScriptPath = Path.Combine(destFull, InstallerEditorScriptFileName);
+                if (!PatchTargetAssetGuid(stagedScriptPath, stagedUnityPackageGuid))
+                {
+                    Debug.LogError(
+                        "[SamiVRCBlocksAvatar] ステージ先スクリプトの TargetAssetGUID 書き換えに失敗しました: " +
+                        stagedScriptPath);
+                    return false;
                 }
 
                 // インポート先で UnityEditor 参照できるよう Editor 専用 asmdef を同梱
@@ -138,11 +171,10 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                     return false;
                 }
 
-                var unityPackage = Path.Combine(destFull, InstallerUnityPackageFileName);
-                if (!File.Exists(unityPackage))
-                    Debug.LogWarning($"[SamiVRCBlocksAvatar] {InstallerUnityPackageFileName} がステージに含まれていません。");
-
-                Debug.Log($"[SamiVRCBlocksAvatar] Installer を {InstallerFolderAssetPath} へ一時配置しました。");
+                var resolved = AssetDatabase.GUIDToAssetPath(stagedUnityPackageGuid);
+                Debug.Log(
+                    $"[SamiVRCBlocksAvatar] Installer を {InstallerFolderAssetPath} へ一時配置しました。" +
+                    $" TargetAssetGUID={stagedUnityPackageGuid} → '{resolved}'");
                 return true;
             }
             catch (System.Exception ex)
@@ -150,6 +182,35 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
                 Debug.LogError($"[SamiVRCBlocksAvatar] Installer のステージに失敗しました: {ex.Message}");
                 return false;
             }
+        }
+
+        static bool PatchTargetAssetGuid(string scriptFullPath, string guid)
+        {
+            if (string.IsNullOrEmpty(scriptFullPath) || !File.Exists(scriptFullPath))
+                return false;
+            if (string.IsNullOrEmpty(guid) || guid.Length != 32)
+                return false;
+
+            var source = File.ReadAllText(scriptFullPath);
+            if (!TargetAssetGuidRegex.IsMatch(source))
+                return false;
+
+            var patched = TargetAssetGuidRegex.Replace(source, "${1}" + guid + "${3}", 1);
+            File.WriteAllText(scriptFullPath, patched);
+            return true;
+        }
+
+        static void WriteDefaultImporterMeta(string metaFullPath, string guid)
+        {
+            var meta =
+                "fileFormatVersion: 2\n" +
+                "guid: " + guid + "\n" +
+                "DefaultImporter:\n" +
+                "  externalObjects: {}\n" +
+                "  userData: \n" +
+                "  assetBundleName: \n" +
+                "  assetBundleVariant: \n";
+            File.WriteAllText(metaFullPath, meta);
         }
 
         /// <summary>

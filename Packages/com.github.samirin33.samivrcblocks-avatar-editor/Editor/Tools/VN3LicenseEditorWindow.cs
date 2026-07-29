@@ -3,7 +3,7 @@ using UnityEditor;
 using UnityEngine;
 using Samirin33.Editor;
 
-namespace Samirin.VRCUtility.AvatarEditor.Editor
+namespace SamiVRCBlocksAvatar.Editor
 {
     /// <summary>
     /// VN3ライセンス Ver.1.10 の情報を編集し、指定フォルダに生成するエディタウィンドウ。
@@ -12,7 +12,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
     /// </summary>
     public class VN3LicenseEditorWindow : EditorWindow
     {
-        const string EditorPrefsKeyOutputDirectory = "Samirin.VRCUtility.AvatarEditor.PackageExporter.OutputDirectory";
+        const string EditorPrefsKeyOutputDirectory = "SamiVRCBlocksAvatar.PackageExporter.OutputDirectory";
 
         static readonly string[] SensitiveOptions = { "不許可", "許可", "プライベート除き禁止" };
 

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
-namespace Samirin.VRCUtility.AvatarEditor.Editor
+namespace SamiVRCBlocksAvatar.Editor
 {
     /// <summary>
     /// VN3ライセンス Ver.1.10 のテキストを生成し、指定フォルダのテキストファイルから読み込むユーティリティ。

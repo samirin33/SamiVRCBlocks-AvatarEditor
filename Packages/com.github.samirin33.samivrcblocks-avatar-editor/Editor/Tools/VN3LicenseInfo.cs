@@ -1,6 +1,6 @@
 using System;
 
-namespace Samirin.VRCUtility.AvatarEditor.Editor
+namespace SamiVRCBlocksAvatar.Editor
 {
     /// <summary>
     /// VN3ライセンス Ver.1.10（利用規約）の編集用データ。
