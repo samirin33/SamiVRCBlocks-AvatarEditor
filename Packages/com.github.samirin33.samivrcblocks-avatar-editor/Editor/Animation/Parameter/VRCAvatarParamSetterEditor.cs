@@ -14,7 +14,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         static Vector2 _paramDescriptionScroll;
         static bool _showFavoritesOnly;
 
-        [MenuItem("SamiVRCBlocks-AvatarEditor/Parameter/VRChat Avatar Param Setter", false, 6)]
+        [MenuItem("SBAvatarEditor/Parameter/VRChat Avatar Param Setter", false, 6)]
         public static void Open()
         {
             var w = GetWindow<VRCAvatarParamSetterEditor>();

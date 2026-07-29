@@ -3,7 +3,7 @@
     "rootNamespace": "",
     "references": [
         "com.github.samirin33.samivrcblocks-avatar-editor.runtime",
-        "com.github.samirin33.samivrcblocks-avatar.editor",
+        "com.github.samirin33.samirin-vrc-utility.editor",
         "VRC.SDK3.Dynamics.Constraint"
     ],
     "includePlatforms": [

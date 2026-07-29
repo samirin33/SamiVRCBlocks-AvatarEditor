@@ -13,7 +13,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
     /// </summary>
     public class BlendShapeAddAll : EditorWindow
     {
-        private const string MenuPath = "SamiVRCBlocks-AvatarEditor/Animation/BlendShapeAddAll";
+        private const string MenuPath = "SBAvatarEditor/Animation/BlendShapeAddAll";
 
         [MenuItem(MenuPath, priority = 6)]
         public static void Open()

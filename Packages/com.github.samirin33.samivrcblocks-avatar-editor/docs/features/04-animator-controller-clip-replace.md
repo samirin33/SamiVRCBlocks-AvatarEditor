@@ -6,7 +6,7 @@
 
 ## 開き方
 
-- メニュー: **`SamiVRCBlocks-AvatarEditor`** → **`Animation`** → **`Animator Controller Clip Replace`**
+- メニュー: **`SBAvatarEditor`** → **`Animation`** → **`Animator Controller Clip Replace`**
 - ウィンドウタイトル: **Controller Clip Replace**
 
 ## 使い方

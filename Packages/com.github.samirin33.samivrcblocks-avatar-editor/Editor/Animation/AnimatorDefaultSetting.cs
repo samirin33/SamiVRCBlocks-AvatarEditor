@@ -510,7 +510,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             }
         }
 
-        [MenuItem("SamiVRCBlocks-AvatarEditor/Settings/Animator Default Setting", false, 9)]
+        [MenuItem("SBAvatarEditor/Settings/Animator Default Setting", false, 9)]
         private static void OpenSettings()
         {
 #if UNITY_2022_2_OR_NEWER

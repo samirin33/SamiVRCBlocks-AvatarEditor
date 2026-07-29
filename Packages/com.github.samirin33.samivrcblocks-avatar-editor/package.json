@@ -1,7 +1,7 @@
 {
   "name": "com.github.samirin33.samivrcblocks-avatar-editor",
   "displayName": "SamiVRCBlocks-AvatarEditor",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "unity": "2022.3",
   "description": "SamiVRCBlocks-AvatarEditor: Editor tools for VRChat Avatar 3.0 (Animator, AnimationClip, parameters).",
   "author": {

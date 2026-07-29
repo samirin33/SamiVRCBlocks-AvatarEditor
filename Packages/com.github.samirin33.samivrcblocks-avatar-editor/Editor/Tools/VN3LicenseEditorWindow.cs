@@ -30,7 +30,7 @@ namespace Samirin.VRCUtility.AvatarEditor.Editor
         bool _otherFoldout = true;
         bool _notesFoldout = true;
 
-        [MenuItem("SamiVRCBlocks-AvatarEditor/File/VN3 License Generator", false, 1)]
+        [MenuItem("SBAvatarEditor/File/VN3 License Generator", false, 1)]
         public static void Open()
         {
             var w = GetWindow<VN3LicenseEditorWindow>(false, "VN3 License", true);

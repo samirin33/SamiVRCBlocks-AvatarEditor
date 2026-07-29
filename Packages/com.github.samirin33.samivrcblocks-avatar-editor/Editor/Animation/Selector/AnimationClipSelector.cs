@@ -61,7 +61,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             }
         }
 
-        [MenuItem("SamiVRCBlocks-AvatarEditor/Animation/Animation Clip Selector", false, 2)]
+        [MenuItem("SBAvatarEditor/Animation/Animation Clip Selector", false, 2)]
         public static void Open()
         {
             var window = GetWindow<AnimationClipSelector>(WindowTitle);

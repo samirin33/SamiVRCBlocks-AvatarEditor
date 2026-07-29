@@ -6,7 +6,7 @@
 
 ## 開き方
 
-- メニュー: **`SamiVRCBlocks-AvatarEditor`** → **`Animation`** → **`Animation Clip Selector`**
+- メニュー: **`SBAvatarEditor`** → **`Animation`** → **`Animation Clip Selector`**
 - ウィンドウタイトル: **Animation Clip Selector**
 
 ## 使い方

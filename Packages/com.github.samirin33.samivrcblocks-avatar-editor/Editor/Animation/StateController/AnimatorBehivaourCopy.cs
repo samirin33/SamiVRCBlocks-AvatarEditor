@@ -321,27 +321,27 @@ public static class AnimatorBehivaourCopy
 
     // #region ステート用 MenuItem（Tools/Samirin/... で右クリックメニュー風に利用）
 
-    // [MenuItem("SamiVRCBlocks-AvatarEditor/Animator State/Copy State", false, 102)]
+    // [MenuItem("SBAvatarEditor/Animator State/Copy State", false, 102)]
     // private static void MenuCopyState()
     // {
     //     if (GetSelectedAnimatorState(out var controller, out _) is AnimatorState state)
     //         CopyState(state);
     // }
 
-    // [MenuItem("SamiVRCBlocks-AvatarEditor/Animator State/Copy State", true)]
+    // [MenuItem("SBAvatarEditor/Animator State/Copy State", true)]
     // private static bool MenuCopyStateValidate()
     // {
     //     return GetSelectedAnimatorState(out _, out _) != null;
     // }
 
-    // [MenuItem("SamiVRCBlocks-AvatarEditor/Animator State/Paste State", false, 103)]
+    // [MenuItem("SBAvatarEditor/Animator State/Paste State", false, 103)]
     // private static void MenuPasteState()
     // {
     //     if (GetFocusedAnimatorContext(out var controller, out var layerIndex))
     //         PasteState(controller, layerIndex);
     // }
 
-    // [MenuItem("SamiVRCBlocks-AvatarEditor/Animator State/Paste State", true)]
+    // [MenuItem("SBAvatarEditor/Animator State/Paste State", true)]
     // private static bool MenuPasteStateValidate()
     // {
     //     return HasCopiedState && GetFocusedAnimatorContext(out _, out _);

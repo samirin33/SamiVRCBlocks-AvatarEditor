@@ -26,10 +26,10 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private const string MenuContextEntryCopy = "CONTEXT/AnimatorTransition/トランジション設定をまとめてコピー";
         private const string MenuContextEntryPasteOverwrite = "CONTEXT/AnimatorTransition/トランジション設定をまとめて上書きペースト";
         private const string MenuContextEntryPasteAdditive = "CONTEXT/AnimatorTransition/トランジション設定をまとめて追加ペースト";
-        // SamiVRCBlocks-AvatarEditor/Animator Binding/…
-        private const string MenuToolsCopy = "SamiVRCBlocks-AvatarEditor/Animator Binding/トランジション設定をまとめてコピー";
-        private const string MenuToolsPasteOverwrite = "SamiVRCBlocks-AvatarEditor/Animator Binding/トランジション設定をまとめて上書きペースト";
-        private const string MenuToolsPasteAdditive = "SamiVRCBlocks-AvatarEditor/Animator Binding/トランジション設定をまとめて追加ペースト";
+        // SBAvatarEditor/Animator Binding/…
+        private const string MenuToolsCopy = "SBAvatarEditor/Animator Binding/トランジション設定をまとめてコピー";
+        private const string MenuToolsPasteOverwrite = "SBAvatarEditor/Animator Binding/トランジション設定をまとめて上書きペースト";
+        private const string MenuToolsPasteAdditive = "SBAvatarEditor/Animator Binding/トランジション設定をまとめて追加ペースト";
 
         private const string EditorPrefsKey = "SamirinEditorTools.AnimatorTransitionMultiCopy.Json";
 

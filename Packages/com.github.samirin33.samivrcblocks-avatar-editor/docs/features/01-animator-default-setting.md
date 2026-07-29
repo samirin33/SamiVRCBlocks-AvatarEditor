@@ -6,7 +6,7 @@ Animator ウィンドウで**新規作成するステート・遷移・レイヤ
 
 ## 開き方
 
-- メニュー: **`SamiVRCBlocks-AvatarEditor`** → **`Settings`** → **`Animator Default Setting`**
+- メニュー: **`SBAvatarEditor`** → **`Settings`** → **`Animator Default Setting`**
 - Preferences（`Preferences/Samirin Editor Tools/...`）からも同様の設定を確認・変更できます。
 - 有効化すると、新規作成時のみ自動で適用されます（既存のステートは変更されません）。
 

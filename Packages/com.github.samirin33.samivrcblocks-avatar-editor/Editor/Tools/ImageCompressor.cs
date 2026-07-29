@@ -55,7 +55,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             public string lastError;
         }
 
-        const string MenuPath = "SamiVRCBlocks-AvatarEditor/Performance/Image Compressor";
+        const string MenuPath = "SBAvatarEditor/Performance/Image Compressor";
         const string AssetsMenuPath = "Assets/SamiVRCBlocks/Compress Images";
 
         static readonly string[] ImageExtensions =

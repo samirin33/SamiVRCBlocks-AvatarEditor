@@ -17,7 +17,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         static bool _showFavoritesOnly;
         static readonly Dictionary<string, bool> _sectionExpanded = new Dictionary<string, bool>();
 
-        [MenuItem("SamiVRCBlocks-AvatarEditor/Parameter/VRChat FaceTracking Param Setter", false, 7)]
+        [MenuItem("SBAvatarEditor/Parameter/VRChat FaceTracking Param Setter", false, 7)]
         public static void Open()
         {
             var w = GetWindow<VRCFaceTrackingParamSetterEditor>();

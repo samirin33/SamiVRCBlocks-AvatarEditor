@@ -6,7 +6,7 @@
 
 ## 開き方
 
-- メニュー: **`SamiVRCBlocks-AvatarEditor`** → **`Performance`** → **`Image Compressor`**
+- メニュー: **`SBAvatarEditor`** → **`Performance`** → **`Image Compressor`**
 - Project ビューで画像やフォルダを選択した状態で **`Assets`** → **`samirin33`** → **`Compress Images`**（ウィンドウを開き、選択内容を追加）
 - ウィンドウタイトル: **Image Compressor**
 

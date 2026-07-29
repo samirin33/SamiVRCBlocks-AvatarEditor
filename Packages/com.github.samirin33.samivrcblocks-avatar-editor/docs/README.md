@@ -4,7 +4,7 @@
 
 ## メニュー構成
 
-メニュー: **`SamiVRCBlocks-AvatarEditor`**
+メニュー: **`SBAvatarEditor`**
 
 | カテゴリ | 項目 |
 |----------|------|

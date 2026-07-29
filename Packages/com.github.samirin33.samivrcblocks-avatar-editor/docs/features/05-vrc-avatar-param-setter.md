@@ -6,7 +6,7 @@
 
 ## 開き方
 
-- メニュー: **`SamiVRCBlocks-AvatarEditor`** → **`Parameter`** → **`VRChat Avatar Param Setter`**
+- メニュー: **`SBAvatarEditor`** → **`Parameter`** → **`VRChat Avatar Param Setter`**
 - ウィンドウタイトル: **VRChat Param Setter**
 
 ## 使い方

@@ -37,7 +37,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         private bool _loaded;
         private Transform _preferredRoot;
 
-        [MenuItem("SamiVRCBlocks-AvatarEditor/Animation/Animation Clip Binding Path Replace", false, 4)]
+        [MenuItem("SBAvatarEditor/Animation/Animation Clip Binding Path Replace", false, 4)]
         public static void Open()
         {
             var w = GetWindow<AnimationClipBindingPathReplaceEditor>("Clip Binding Path Replace");

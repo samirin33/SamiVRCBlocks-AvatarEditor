@@ -17,9 +17,9 @@ namespace Samirin33.AvatarEditor.Tools.Editor
     /// </summary>
     public static class AnimatorBinding
     {
-        private const string MenuPathConvergeToLast = "SamiVRCBlocks-AvatarEditor/Animator Binding/新しいトランジションを作成、最後に収束";
-        private const string MenuPathDivergeFromFirst = "SamiVRCBlocks-AvatarEditor/Animator Binding/新しいトランジションを作成、最初から拡散";
-        private const string MenuPathNewStateAtCenter = "SamiVRCBlocks-AvatarEditor/Animator Binding/新しいステートを作成";
+        private const string MenuPathConvergeToLast = "SBAvatarEditor/Animator Binding/新しいトランジションを作成、最後に収束";
+        private const string MenuPathDivergeFromFirst = "SBAvatarEditor/Animator Binding/新しいトランジションを作成、最初から拡散";
+        private const string MenuPathNewStateAtCenter = "SBAvatarEditor/Animator Binding/新しいステートを作成";
 
         /// <summary>ショートカット ID（<see cref="ShortcutManager"/> / 設定画面と共通）。</summary>
         public static class ShortcutIds
@@ -954,7 +954,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             AnimatorMenuHotkeyDisplay.TrySetFromShortcutId(MenuPathNewStateAtCenter, ShortcutIds.NewStateAtCursor);
         }
 
-        [MenuItem("SamiVRCBlocks-AvatarEditor/Settings/Animator Binding", false, 10)]
+        [MenuItem("SBAvatarEditor/Settings/Animator Binding", false, 10)]
         public static void OpenAnimatorBindingPreferences()
         {
 #if UNITY_2022_2_OR_NEWER

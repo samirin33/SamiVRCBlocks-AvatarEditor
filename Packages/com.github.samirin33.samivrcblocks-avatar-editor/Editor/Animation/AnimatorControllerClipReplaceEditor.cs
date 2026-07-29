@@ -22,7 +22,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         private AnimationClip _replacementClip;
         private int _previewMatchCount = -1;
 
-        [MenuItem("SamiVRCBlocks-AvatarEditor/Animation/Animator Controller Clip Replace", false, 5)]
+        [MenuItem("SBAvatarEditor/Animation/Animator Controller Clip Replace", false, 5)]
         public static void Open()
         {
             var window = GetWindow<AnimatorControllerClipReplaceEditor>("Controller Clip Replace");

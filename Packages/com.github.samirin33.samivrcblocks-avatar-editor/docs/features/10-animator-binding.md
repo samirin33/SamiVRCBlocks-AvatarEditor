@@ -8,7 +8,7 @@ Animator 編集でキーボードショートカットを扱えるようにし�
 
 ## 開き方
 
-- メニュー: **`SamiVRCBlocks-AvatarEditor`** → **`Settings`** → **`Animator Binding`**
+- メニュー: **`SBAvatarEditor`** → **`Settings`** → **`Animator Binding`**
 - Preferences: **`Preferences/Samirin Editor Tools/Animator Binding`**
 - 実行時は Animator ウィンドウで対象ステート／トランジションを選択して使います
 
@@ -37,7 +37,7 @@ Animator 編集でキーボードショートカットを扱えるようにし�
 ### トランジション設定のコピー／ペースト
 
 - ショートカット、またはトランジションの **CONTEXT（右クリック）メニュー** から実行できます
-- トップメニュー `SamiVRCBlocks-AvatarEditor/Animator Binding/...` の項目は表示されません
+- トップメニュー `SBAvatarEditor/Animator Binding/...` の項目は表示されません
 
 ## 注意事項
 

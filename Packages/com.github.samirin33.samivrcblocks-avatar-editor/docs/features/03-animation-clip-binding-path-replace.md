@@ -6,7 +6,7 @@
 
 ## 開き方
 
-- メニュー: **`SamiVRCBlocks-AvatarEditor`** → **`Animation`** → **`Animation Clip Binding Path Replace`**
+- メニュー: **`SBAvatarEditor`** → **`Animation`** → **`Animation Clip Binding Path Replace`**
 - ウィンドウタイトル: **Clip Binding Path Replace**
 - [Animation Clip Selector](06-animation-clip-selector.md) の Missing 詳細から、対象 Clip・置換前パスを事前入力した状態で開くこともできます
 

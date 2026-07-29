@@ -6,12 +6,12 @@
 
 ## 開き方
 
-- メニュー: **`SamiVRCBlocks-AvatarEditor`** → **`Performance`** → **`FPS Limiter`**
+- メニュー: **`SBAvatarEditor`** → **`Performance`** → **`FPS Limiter`**
 - FPS Limiter ウィンドウが表示されます
 
 ## 使い方
 
-1. **SamiVRCBlocks-AvatarEditor** → **Performance** → **FPS Limiter** でウィンドウを開く
+1. **SBAvatarEditor** → **Performance** → **FPS Limiter** でウィンドウを開く
 2. **目標 FPS** をスライダー（1〜120）で指定するか、プリセットボタンで設定
 3. 変更は即座に反映され、`Application.targetFrameRate` が更新されます
 
