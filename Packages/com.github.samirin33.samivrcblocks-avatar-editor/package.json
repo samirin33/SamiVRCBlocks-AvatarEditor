@@ -13,11 +13,10 @@
   "changelogUrl": "https://github.com/samirin33/SamiVRCBlocks-AvatarEditor/releases",
   "vpmDependencies": {
     "com.vrchat.avatars": ">=3.7.0",
-    "com.github.samirin33.samivrcblocks-avatar": ">=0.2.5"
+    "com.github.samirin33.samivrcblocks-avatar": ">=0.5.0"
   },
   "legacyFolders": {
     "Assets\\samirin33\\SamirinVRCUtility Avatar Editor": "",
-    "Assets\\samirin33\\SAMIBlocks Avatar Editor": "",
     "Assets\\samirin33\\SamiVRCBlocks-AvatarEditor": ""
   },
   "license": "MIT"
