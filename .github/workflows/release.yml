@@ -3,6 +3,10 @@ name: Build Release
 on: 
   workflow_dispatch:
 
+env:
+  PACKAGE_NAME: com.github.samirin33.samivrcblocks-avatar-editor
+  packagePath: Packages/com.github.samirin33.samivrcblocks-avatar-editor
+
 jobs:
 
   # Validate Repository Configuration
@@ -12,11 +16,11 @@ jobs:
       config_package: ${{ steps.config_package.outputs.configPackage }}
     steps:
 
-    # Ensure that required repository variable has been created for the Package
+    # Ensure that required package path exists
     - name: Validate Package Config
       id: config_package
       run: |
-        if [ "${{ vars.PACKAGE_NAME }}" != "" ]; then
+        if [ -n "${{ env.PACKAGE_NAME }}" ]; then
           echo "configPackage=true" >> $GITHUB_OUTPUT;
         else
           echo "configPackage=false" >> $GITHUB_OUTPUT;
@@ -29,8 +33,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      packagePath: Packages/${{ vars.PACKAGE_NAME }}
     if: needs.config.outputs.config_package == 'true'
     steps:
 
@@ -49,8 +51,8 @@ jobs:
       # Configure the Environment Variables needed for releasing the Package
       - name: Set Environment Variables
         run: |
-          echo "zipFile=${{ vars.PACKAGE_NAME }}-${{ steps.version.outputs.value }}".zip >> $GITHUB_ENV
-          echo "unityPackage=${{ vars.PACKAGE_NAME }}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
+          echo "zipFile=${{ env.PACKAGE_NAME }}-${{ steps.version.outputs.value }}".zip >> $GITHUB_ENV
+          echo "unityPackage=${{ env.PACKAGE_NAME }}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
           echo "version=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
 
       # 前回のリリースタグを取得（リリースが無い場合は空）
