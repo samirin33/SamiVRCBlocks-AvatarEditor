@@ -11,7 +11,7 @@
 | **File** | Package Exporter / VN3 License Generator |
 | **Animation** | Animation Clip Selector / AnimatorStateController / Animation Clip Binding Path Replace / Animator Controller Clip Replace |
 | **Parameter** | VRChat Avatar Param Setter / VRChat FaceTracking Param Setter |
-| **Performance** | FPS Limiter / Image Compressor |
+| **Performance** | FPS Limiter / Image Compressor / Item Analyzer |
 | **Settings** | Animator Default Setting / Animator Binding |
 
 ## ドキュメント一覧
@@ -30,3 +30,4 @@
 | 10 | [10-animator-binding.md](features/10-animator-binding.md) | Animator Binding（ショートカット） |
 | 11 | [11-animator-state-controller.md](features/11-animator-state-controller.md) | AnimatorStateController |
 | 12 | [12-image-compressor.md](features/12-image-compressor.md) | Image Compressor |
+| 13 | [13-item-analyzer.md](features/13-item-analyzer.md) | Item Analyzer |

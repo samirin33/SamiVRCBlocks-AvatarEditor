@@ -59,3 +59,4 @@ VN3 ライセンスを同じ出力先に生成したい場合は「VN3ライセ�
 ## 関連
 
 - [VN3 License Generator（LicenseGenerator）](09-license-generator.md) — 同じ出力先に VN3License.txt を生成する機能と連携します。
+- [Item Analyzer（ItemAnalyzer）](13-item-analyzer.md) — 配布フォルダの指定に合わせて解析できます。

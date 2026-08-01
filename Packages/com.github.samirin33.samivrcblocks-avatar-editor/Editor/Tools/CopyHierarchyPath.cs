@@ -7,7 +7,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
     {
         private const string MenuRoot = "GameObject/Copy Hierarchy Path ";
 
-        [MenuItem(MenuRoot + "From Root", false, 0)]
+        [MenuItem(MenuRoot + "From Root", false, 30)]
         public static void CopyPathFromRoot()
         {
             var go = GetTargetGameObject();
@@ -18,13 +18,13 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             Debug.Log($"Copied path (from Root): {path}");
         }
 
-        [MenuItem(MenuRoot + "From Root", true)]
+        [MenuItem(MenuRoot + "From Root", true, 30)]
         public static bool CopyPathFromRootValidate()
         {
             return GetTargetGameObject() != null;
         }
 
-        [MenuItem(MenuRoot + "From Animator", false, 1)]
+        [MenuItem(MenuRoot + "From Animator", false, 31)]
         public static void CopyPathFromAnimator()
         {
             var go = GetTargetGameObject();
@@ -43,7 +43,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             Debug.Log($"Copied path (from Animator): {path}");
         }
 
-        [MenuItem(MenuRoot + "From Animator", true)]
+        [MenuItem(MenuRoot + "From Animator", true, 31)]
         public static bool CopyPathFromAnimatorValidate()
         {
             return GetTargetGameObject() != null;
