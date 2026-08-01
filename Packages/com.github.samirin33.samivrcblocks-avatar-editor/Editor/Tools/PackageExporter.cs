@@ -40,7 +40,130 @@ namespace SamiVRCBlocksAvatar.Editor
         }
 
         public const string BoothInformationFolder = "Assets/samirin33/SamirinBoothInformation";
+        public const string ItemAnalysisFileName = "ItemAnalysis.txt";
         const string BoothAssetInfoTypeName = "SamirinBoothAssetInfo";
+        const string Samirin33Root = "Assets/samirin33";
+        static readonly HashSet<string> ExcludedSamirin33ProductNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "SamirinBoothInformation",
+            "SamirinBoothManager",
+            "Editor",
+            "Script"
+        };
+
+        /// <summary>
+        /// Assets/samirin33 配下の配布物キー（例: Assets/samirin33/DeskPen/... → DeskPen）を取得します。
+        /// </summary>
+        public static bool TryGetSamirin33ProductKey(string sourceAssetFolder, out string productKey)
+        {
+            productKey = null;
+            if (string.IsNullOrEmpty(sourceAssetFolder))
+                return false;
+
+            var normalized = sourceAssetFolder.Replace("\\", "/").TrimEnd('/');
+            if (normalized == Samirin33Root)
+                return false;
+
+            if (normalized.StartsWith(BoothInformationFolder + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                var relative = normalized.Substring(BoothInformationFolder.Length).TrimStart('/');
+                if (string.IsNullOrEmpty(relative))
+                    return false;
+                productKey = relative.Split('/')[0];
+            }
+            else if (normalized.StartsWith(Samirin33Root + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                var relative = normalized.Substring(Samirin33Root.Length).TrimStart('/');
+                if (string.IsNullOrEmpty(relative))
+                    return false;
+                productKey = relative.Split('/')[0];
+            }
+            else
+            {
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(productKey) || ExcludedSamirin33ProductNames.Contains(productKey))
+            {
+                productKey = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 配布フォルダに対応する SamirinBoothInformation 配下フォルダを解決します。
+        /// 例: Assets/samirin33/DeskPen → Assets/samirin33/SamirinBoothInformation/DeskPen
+        /// </summary>
+        public static bool TryGetBoothInformationOutputFolder(
+            string sourceAssetFolder,
+            out string boothInfoFolderAssetPath,
+            bool createIfMissing = false)
+        {
+            boothInfoFolderAssetPath = null;
+            if (!TryGetSamirin33ProductKey(sourceAssetFolder, out var productKey))
+                return false;
+
+            boothInfoFolderAssetPath = (BoothInformationFolder + "/" + productKey).Replace("\\", "/");
+
+            // BoothAssetInfo があれば、その実ファイルの親フォルダを優先
+            var boothAsset = FindBoothAssetInfoForFolder(Samirin33Root + "/" + productKey)
+                            ?? FindBoothAssetInfoForFolder(sourceAssetFolder);
+            if (boothAsset != null)
+            {
+                var assetPath = AssetDatabase.GetAssetPath(boothAsset).Replace("\\", "/");
+                var parent = Path.GetDirectoryName(assetPath)?.Replace("\\", "/");
+                if (!string.IsNullOrEmpty(parent) &&
+                    parent.StartsWith(BoothInformationFolder + "/", StringComparison.OrdinalIgnoreCase))
+                {
+                    boothInfoFolderAssetPath = parent;
+                }
+            }
+
+            if (createIfMissing)
+                EnsureAssetFolder(boothInfoFolderAssetPath);
+
+            return createIfMissing || AssetDatabase.IsValidFolder(boothInfoFolderAssetPath);
+        }
+
+        /// <summary>
+        /// Assets パスを絶対パスに変換します。
+        /// </summary>
+        public static string ToFullPath(string assetPath)
+        {
+            return AssetPathToFullPath(assetPath);
+        }
+
+        /// <summary>
+        /// SamirinBoothInformation 配下フォルダにテキストファイルを書き出します。
+        /// </summary>
+        public static string WriteTextToBoothInformationFolder(
+            string sourceAssetFolder,
+            string fileName,
+            string contents)
+        {
+            if (string.IsNullOrEmpty(fileName))
+                throw new ArgumentException("fileName is required.", nameof(fileName));
+
+            if (!TryGetBoothInformationOutputFolder(sourceAssetFolder, out var assetFolder, createIfMissing: true))
+            {
+                Debug.LogWarning("[PackageExporter] Booth Information 出力先を解決できません: " + sourceAssetFolder);
+                return null;
+            }
+
+            var fullFolder = AssetPathToFullPath(assetFolder);
+            if (string.IsNullOrEmpty(fullFolder))
+                return null;
+
+            if (!Directory.Exists(fullFolder))
+                Directory.CreateDirectory(fullFolder);
+
+            var fullPath = Path.Combine(fullFolder, fileName).Replace("\\", "/");
+            File.WriteAllText(fullPath, contents ?? "", new System.Text.UTF8Encoding(true));
+            AssetDatabase.Refresh();
+            return fullPath;
+        }
 
         /// <summary>
         /// Assembly-CSharp 上の SamirinBoothAssetInfo 型を取得（パッケージから直接参照できないため）。
@@ -641,6 +764,14 @@ namespace SamiVRCBlocksAvatar.Editor
                     AssetDatabase.CreateFolder(current, parts[i]);
                 current = next;
             }
+        }
+
+        /// <summary>
+        /// Item Analyzer を開き、指定した配布フォルダを解析対象に設定します。
+        /// </summary>
+        public static void OpenItemAnalyzer(string sourceFolderPath)
+        {
+            ItemAnalyzer.OpenWithDirectory(sourceFolderPath);
         }
     }
 }

@@ -76,9 +76,26 @@ namespace SamiVRCBlocksAvatar.Editor
                 else if (line.StartsWith("【クレジット表記】 "))
                 {
                     var val = line.Substring("【クレジット表記】 ".Length).Trim();
-                    if (val == "不要") { info.creditRequired = false; info.credit = ""; }
-                    else if (val == "要（表記は別途指定）") { info.creditRequired = true; info.credit = ""; }
-                    else { info.creditRequired = true; info.credit = val; }
+                    if (val == "不要")
+                    {
+                        info.creditMode = VN3LicenseInfo.CreditModeNotRequired;
+                        info.credit = "";
+                    }
+                    else if (val == VN3LicenseInfo.CreditOptions[VN3LicenseInfo.CreditModeAppreciated])
+                    {
+                        info.creditMode = VN3LicenseInfo.CreditModeAppreciated;
+                        info.credit = "";
+                    }
+                    else if (val == "要（表記は別途指定）")
+                    {
+                        info.creditMode = VN3LicenseInfo.CreditModeRequired;
+                        info.credit = "";
+                    }
+                    else
+                    {
+                        info.creditMode = VN3LicenseInfo.CreditModeRequired;
+                        info.credit = val;
+                    }
                 }
                 else if (line.StartsWith("【推奨ハッシュタグ】 "))
                 {
@@ -139,9 +156,12 @@ namespace SamiVRCBlocksAvatar.Editor
             else if (line.Contains("C ソーシャル")) info.allowUploadToSocialPlatforms = allow;
             else if (line.Contains("D オンラインゲーム")) info.allowUploadToOnlineGamePlatforms = allow;
             else if (line.Contains("E オンラインサービス内")) info.allowThirdPartyUseWithinService = allow;
-            else if (line.Contains("F 性的表現")) info.sensitiveSexual = ParseSensitive(value);
-            else if (line.Contains("G 暴力的表現")) info.sensitiveViolence = ParseSensitive(value);
-            else if (line.Contains("H 政治")) info.sensitivePoliticalReligious = ParseSensitive(value);
+            else if (line.Contains("F 性的表現"))
+                ParseSensitive(value, out info.sensitiveSexual, out info.sensitiveSexualCustom);
+            else if (line.Contains("G 暴力的表現"))
+                ParseSensitive(value, out info.sensitiveViolence, out info.sensitiveViolenceCustom);
+            else if (line.Contains("H 政治"))
+                ParseSensitive(value, out info.sensitivePoliticalReligious, out info.sensitivePoliticalReligiousCustom);
             else if (line.Contains("I 調整")) info.allowAdjustment = allow;
             else if (line.Contains("J 改変")) info.allowModification = allow;
             else if (line.Contains("K 他データ改変")) info.allowUseForModifyingOtherData = allow;
@@ -155,15 +175,49 @@ namespace SamiVRCBlocksAvatar.Editor
             else if (line.Contains("S メッシュ・ウェイト転用")) info.allowMeshWeightForCostume = allow;
             else if (line.Contains("T 規格準拠の新たな")) info.allowNewDataCompliantWithSpec = allow;
             else if (line.Contains("U データをモチーフにした")) info.allowDerivativeWorks = allow;
-            else if (line.Contains("V クレジット表記")) info.creditRequired = (value == "必要");
+            else if (line.Contains("V クレジット表記"))
+            {
+                if (value == VN3LicenseInfo.CreditOptions[VN3LicenseInfo.CreditModeAppreciated])
+                    info.creditMode = VN3LicenseInfo.CreditModeAppreciated;
+                else if (value == "必要")
+                    info.creditMode = VN3LicenseInfo.CreditModeRequired;
+                else
+                    info.creditMode = VN3LicenseInfo.CreditModeNotRequired;
+            }
             else if (line.Contains("W 権利義務の譲渡")) info.allowTransferOfRights = allow;
         }
 
-        static int ParseSensitive(string value)
+        static void ParseSensitive(string value, out int index, out string custom)
         {
-            if (value == "許可") return 1;
-            if (value == "プライベート除き禁止") return 2;
-            return 0;
+            custom = "";
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                index = 0;
+                return;
+            }
+
+            for (var i = 0; i < VN3LicenseInfo.SensitiveOptions.Length; i++)
+            {
+                if (i == VN3LicenseInfo.SensitiveIndexCustom)
+                    continue;
+                if (value == VN3LicenseInfo.SensitiveOptions[i])
+                {
+                    index = i;
+                    return;
+                }
+            }
+
+            // 旧表記・表記ゆれ
+            if (value == "許可します（ただし棲み分けはおこなうこと）"
+                || value == "許可します(ただし棲み分けはおこなうこと)"
+                || value == "許可します（ただし棲み分けは行うこと）")
+            {
+                index = 3;
+                return;
+            }
+
+            index = VN3LicenseInfo.SensitiveIndexCustom;
+            custom = value;
         }
 
         const string Vn3Url = "https://www.vn3.org/";
@@ -193,7 +247,7 @@ namespace SamiVRCBlocksAvatar.Editor
                 "【許諾対象データ】 " + (string.IsNullOrEmpty(info.dataName) ? "—" : info.dataName),
                 "【権利者】 " + (string.IsNullOrEmpty(info.rightsHolder) ? "—" : info.rightsHolder),
                 "【問い合わせ先】 " + (string.IsNullOrEmpty(info.contact) ? "—" : info.contact),
-                "【クレジット表記】 " + (info.creditRequired ? (string.IsNullOrEmpty(info.credit) ? "要（表記は別途指定）" : info.credit) : "不要"),
+                "【クレジット表記】 " + VN3LicenseInfo.CreditSummaryLabel(info),
                 "【推奨ハッシュタグ】 " + (string.IsNullOrEmpty(info.recommendedHashtags) ? "—" : info.recommendedHashtags),
                 "【許諾期間】" + (string.IsNullOrEmpty(info.licenseTerm) ? (Environment.NewLine + "  " + GetDefaultLicenseTermText()) : (" " + info.licenseTerm)),
                 "【利用規約バージョン】 " + (string.IsNullOrEmpty(info.licenseVersion) ? VN3LicenseInfo.CurrentVersion : info.licenseVersion),
@@ -205,9 +259,9 @@ namespace SamiVRCBlocksAvatar.Editor
                 "  C ソーシャルプラットフォームへのアップロード: " + (info.allowUploadToSocialPlatforms ? "許可" : "不許可"),
                 "  D オンラインゲームプラットフォームへのアップロード（VRChat等）: " + (info.allowUploadToOnlineGamePlatforms ? "許可" : "不許可"),
                 "  E オンラインサービス内での第三者への利用の許諾: " + (info.allowThirdPartyUseWithinService ? "許可" : "不許可"),
-                "  F 性的表現: " + VN3LicenseInfo.SensitiveLabel(info.sensitiveSexual),
-                "  G 暴力的表現: " + VN3LicenseInfo.SensitiveLabel(info.sensitiveViolence),
-                "  H 政治活動・宗教活動: " + VN3LicenseInfo.SensitiveLabel(info.sensitivePoliticalReligious),
+                "  F 性的表現: " + VN3LicenseInfo.SensitiveLabel(info.sensitiveSexual, info.sensitiveSexualCustom),
+                "  G 暴力的表現: " + VN3LicenseInfo.SensitiveLabel(info.sensitiveViolence, info.sensitiveViolenceCustom),
+                "  H 政治活動・宗教活動: " + VN3LicenseInfo.SensitiveLabel(info.sensitivePoliticalReligious, info.sensitivePoliticalReligiousCustom),
                 "  I 調整: " + (info.allowAdjustment ? "許可" : "不許可"),
                 "  J 改変: " + (info.allowModification ? "許可" : "不許可"),
                 "  K 他データ改変目的での利用: " + (info.allowUseForModifyingOtherData ? "許可" : "不許可"),
@@ -221,7 +275,7 @@ namespace SamiVRCBlocksAvatar.Editor
                 "  S メッシュ・ウェイト転用した衣装データの作成: " + (info.allowMeshWeightForCostume ? "許可" : "不許可"),
                 "  T 規格準拠の新たなデータの作成: " + (info.allowNewDataCompliantWithSpec ? "許可" : "不許可"),
                 "  U データをモチーフにした二次的著作物: " + (info.allowDerivativeWorks ? "許可" : "不許可"),
-                "  V クレジット表記: " + (info.creditRequired ? "必要" : "不要"),
+                "  V クレジット表記: " + VN3LicenseInfo.CreditConditionLabel(info),
                 "  W 権利義務の譲渡等: " + (info.allowTransferOfRights ? "許可" : "不許可"),
                 ""
             };

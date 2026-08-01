@@ -9,14 +9,15 @@ namespace SamiVRCBlocksAvatar.Editor
     /// VN3ライセンス Ver.1.10 の情報を編集し、指定フォルダに生成するエディタウィンドウ。
     /// VRC向けサンプル（sample_vn3license110_JA）に基づく個別条件 A～X を編集します。
     /// Package Exporter の出力先と同一の EditorPrefs キーで連携します。
+    /// Assets/samirin33 配下の場合は SamirinBoothInformation にも出力できます。
     /// </summary>
     public class VN3LicenseEditorWindow : EditorWindow
     {
         const string EditorPrefsKeyOutputDirectory = "SamiVRCBlocksAvatar.PackageExporter.OutputDirectory";
-
-        static readonly string[] SensitiveOptions = { "不許可", "許可", "プライベート除き禁止" };
+        const string EditorPrefsKeySourceFolder = "SamiVRCBlocksAvatar.PackageExporter.SourceFolder";
 
         string _outputDirectory = "";
+        string _sourceFolderPath = "";
         VN3LicenseInfo _info;
         Vector2 _scrollPosition;
         bool _basicFoldout = true;
@@ -40,6 +41,7 @@ namespace SamiVRCBlocksAvatar.Editor
         void OnEnable()
         {
             _outputDirectory = EditorPrefs.GetString(EditorPrefsKeyOutputDirectory, "");
+            _sourceFolderPath = EditorPrefs.GetString(EditorPrefsKeySourceFolder, "");
             if (_info == null)
                 _info = new VN3LicenseInfo();
         }
@@ -75,8 +77,12 @@ namespace SamiVRCBlocksAvatar.Editor
                         _info.dataName = EditorGUILayout.TextField("許諾対象データ", _info.dataName ?? "");
                         _info.rightsHolder = EditorGUILayout.TextField("権利者", _info.rightsHolder ?? "");
                         _info.contact = EditorGUILayout.TextField("問い合わせ先", _info.contact ?? "");
-                        _info.credit = EditorGUILayout.TextField("クレジット表記（例）", _info.credit ?? "");
-                        _info.creditRequired = EditorGUILayout.Toggle("V クレジット表記を必要とする", _info.creditRequired);
+                        _info.creditMode = Mathf.Clamp(
+                            EditorGUILayout.Popup("クレジット表記", _info.creditMode, VN3LicenseInfo.CreditOptions),
+                            0,
+                            VN3LicenseInfo.CreditOptions.Length - 1);
+                        if (_info.creditMode == VN3LicenseInfo.CreditModeRequired)
+                            _info.credit = EditorGUILayout.TextField("クレジット表記（例）", _info.credit ?? "");
                         _info.recommendedHashtags = EditorGUILayout.TextField("推奨ハッシュタグ", _info.recommendedHashtags ?? "");
                         _info.licenseTerm = EditorGUILayout.TextField("許諾期間", _info.licenseTerm ?? "");
                         EditorGUILayout.HelpBox(
@@ -115,9 +121,9 @@ namespace SamiVRCBlocksAvatar.Editor
                     if (_sensitiveFoldout)
                     {
                         EditorGUI.indentLevel++;
-                        _info.sensitiveSexual = EditorGUILayout.Popup("F 性的表現", _info.sensitiveSexual, SensitiveOptions);
-                        _info.sensitiveViolence = EditorGUILayout.Popup("G 暴力的表現", _info.sensitiveViolence, SensitiveOptions);
-                        _info.sensitivePoliticalReligious = EditorGUILayout.Popup("H 政治・宗教活動", _info.sensitivePoliticalReligious, SensitiveOptions);
+                        DrawSensitiveField("F 性的表現", ref _info.sensitiveSexual, ref _info.sensitiveSexualCustom);
+                        DrawSensitiveField("G 暴力的表現", ref _info.sensitiveViolence, ref _info.sensitiveViolenceCustom);
+                        DrawSensitiveField("H 政治・宗教活動", ref _info.sensitivePoliticalReligious, ref _info.sensitivePoliticalReligiousCustom);
                         EditorGUI.indentLevel--;
                     }
                     EditorGUILayout.Space(2);
@@ -225,6 +231,8 @@ namespace SamiVRCBlocksAvatar.Editor
                     }
                     GUI.enabled = true;
 
+                    DrawBoothInformationSection();
+
                     EditorGUILayout.Space(4);
                 }
                 finally
@@ -233,6 +241,79 @@ namespace SamiVRCBlocksAvatar.Editor
                 }
                 EditorGUILayout.EndScrollView();
             }, new Rect(0, 0, position.width, position.height));
+        }
+
+        void DrawSensitiveField(string label, ref int index, ref string custom)
+        {
+            if (index < 0 || index >= VN3LicenseInfo.SensitiveOptions.Length)
+                index = 0;
+
+            index = EditorGUILayout.Popup(label, index, VN3LicenseInfo.SensitiveOptions);
+            if (index == VN3LicenseInfo.SensitiveIndexCustom)
+                custom = EditorGUILayout.TextField("　直接入力", custom ?? "");
+        }
+
+        void DrawBoothInformationSection()
+        {
+            _sourceFolderPath = EditorPrefs.GetString(EditorPrefsKeySourceFolder, _sourceFolderPath ?? "");
+            var hasBoothTarget = PackageExporter.TryGetBoothInformationOutputFolder(
+                _sourceFolderPath, out var boothFolder);
+
+            EditorGUILayout.Space(8);
+            EditorGUILayout.LabelField("SamirinBoothInformation（Assets/samirin33 配下向け）");
+            using (new EditorGUI.DisabledScope(true))
+                EditorGUILayout.TextField("配布フォルダ", _sourceFolderPath ?? "");
+
+            if (!PackageExporter.IsUnderSamirin33Folder(_sourceFolderPath))
+            {
+                SamirinEditorStyleHelper.DrawHelpBoxWithDefaultFont(
+                    "Package Exporter の配布フォルダが Assets/samirin33 配下のとき、対応する Booth Information フォルダへライセンスを出力できます。",
+                    MessageType.Info);
+                return;
+            }
+
+            if (!hasBoothTarget)
+            {
+                SamirinEditorStyleHelper.DrawHelpBoxWithDefaultFont(
+                    "Booth Information の出力先を解決できません。製品フォルダ名を確認してください。",
+                    MessageType.Warning);
+                return;
+            }
+
+            using (new EditorGUI.DisabledScope(true))
+                EditorGUILayout.TextField("Booth Information", boothFolder);
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Booth Information から読み込み", GUILayout.ExpandWidth(true)))
+            {
+                var fullFolder = PackageExporter.ToFullPath(boothFolder);
+                var loaded = LicenseGenerator.LoadFromFolder(fullFolder);
+                if (loaded != null)
+                {
+                    _info = loaded;
+                    Debug.Log("[VN3 License] Loaded from Booth Information: " + boothFolder);
+                }
+                else
+                {
+                    EditorUtility.DisplayDialog(
+                        "読み込み",
+                        $"Booth Information に {LicenseGenerator.LicenseTextFileName} が見つからないか、形式が正しくありません。\n{boothFolder}",
+                        "OK");
+                }
+            }
+
+            if (GUILayout.Button("Booth Information に生成", GUILayout.ExpandWidth(true)))
+            {
+                var result = PackageExporter.WriteTextToBoothInformationFolder(
+                    _sourceFolderPath,
+                    LicenseGenerator.LicenseTextFileName,
+                    LicenseGenerator.BuildLicenseText(_info));
+                if (!string.IsNullOrEmpty(result) && File.Exists(result))
+                    EditorUtility.RevealInFinder(result);
+                else
+                    EditorUtility.DisplayDialog("生成", "Booth Information への書き出しに失敗しました。", "OK");
+            }
+            EditorGUILayout.EndHorizontal();
         }
     }
 }

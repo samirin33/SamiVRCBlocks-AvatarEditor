@@ -229,6 +229,16 @@ namespace SamiVRCBlocksAvatar.Editor
                         EditorGUILayout.HelpBox("有効なプロジェクト内フォルダパスを指定してください（例: Assets/MyPackage）", MessageType.Warning);
                     }
 
+                    EditorGUILayout.BeginHorizontal();
+                    GUI.enabled = !string.IsNullOrEmpty(_sourceFolderPath) && AssetDatabase.IsValidFolder(_sourceFolderPath);
+                    if (GUILayout.Button("Item Analyzer を開く（この配布フォルダを解析）", GUILayout.Height(22)))
+                    {
+                        PersistSourceFolder(_sourceFolderPath);
+                        PackageExporter.OpenItemAnalyzer(_sourceFolderPath);
+                    }
+                    GUI.enabled = true;
+                    EditorGUILayout.EndHorizontal();
+
                     // 関連フォルダ（PackageAssetInfo.json に保持し、エクスポート時に同梱）
                     if (_assetInfo == null && !string.IsNullOrEmpty(_sourceFolderPath))
                         LoadAssetInfoFromFolder();
@@ -386,7 +396,15 @@ namespace SamiVRCBlocksAvatar.Editor
                     if (GUILayout.Button("VN3ライセンスを編集／指定フォルダに生成", GUILayout.Height(22)))
                     {
                         EditorPrefs.SetString(EditorPrefsKeyOutputDirectory, _outputDirectory);
+                        EditorPrefs.SetString(EditorPrefsKeySourceFolder, _sourceFolderPath ?? "");
                         VN3LicenseEditorWindow.Open();
+                    }
+                    if (PackageExporter.IsUnderSamirin33Folder(_sourceFolderPath) &&
+                        PackageExporter.TryGetBoothInformationOutputFolder(_sourceFolderPath, out var boothFolder))
+                    {
+                        EditorGUILayout.HelpBox(
+                            $"samirin33 配下のため、ライセンス・解析情報は Booth Information にも出力できます:\n{boothFolder}",
+                            MessageType.Info);
                     }
                     EditorGUILayout.Space(6);
 
