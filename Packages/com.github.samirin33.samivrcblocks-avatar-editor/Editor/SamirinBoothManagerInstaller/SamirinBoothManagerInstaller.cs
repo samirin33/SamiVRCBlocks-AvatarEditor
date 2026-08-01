@@ -68,7 +68,8 @@ public static class SamirinBoothManagerInstaller
     }
 
     /// <summary>
-    /// メニューが登録されるまで待ってから Item Center を開く。
+    /// コンパイル完了後に SBM_UIMain.ShowWindow を呼んで Item Center を開く。
+    /// ExecuteMenuItem は未登録時に Unity エラーログが出るため使わない。
     /// </summary>
     static void TryOpenItemCenterAfterInstall(int retriesLeft)
     {
@@ -80,7 +81,14 @@ public static class SamirinBoothManagerInstaller
             if (!EditorPrefs.GetBool(PrefsOpenAfterInstallKey, false))
                 return;
 
-            if (EditorApplication.ExecuteMenuItem("samirin33/Samirin's Item Center"))
+            // コンパイル／アセット更新中は型が未登録なので回数を消費せず待つ
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+            {
+                TryOpenItemCenterAfterInstall(retriesLeft);
+                return;
+            }
+
+            if (TryOpenItemCenterWindow())
             {
                 EditorPrefs.DeleteKey(PrefsOpenAfterInstallKey);
                 Log("Samirin's Item Center を開きました。");
@@ -90,8 +98,35 @@ public static class SamirinBoothManagerInstaller
             if (retriesLeft > 0)
                 TryOpenItemCenterAfterInstall(retriesLeft - 1);
             else
-                LogWarning("Samirin's Item Center メニューが見つかりませんでした。後でメニューから開いてください。");
+                LogWarning("Samirin's Item Center を開けませんでした。後でメニューから開いてください。");
         };
+    }
+
+    /// <summary>
+    /// SBM_UIMain.ShowWindow をリフレクションで呼び出す。型未ロードなら false。
+    /// </summary>
+    static bool TryOpenItemCenterWindow()
+    {
+        var type = FindTypeByName("SBM_UIMain");
+        if (type == null)
+            return false;
+
+        var method = type.GetMethod(
+            "ShowWindow",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        if (method == null)
+            return false;
+
+        try
+        {
+            method.Invoke(null, null);
+            return true;
+        }
+        catch (Exception e)
+        {
+            LogWarning("Samirin's Item Center の起動に失敗: " + e.Message);
+            return false;
+        }
     }
 
     static void Log(string message) => Debug.Log($"{LogPrefix} {message}");
