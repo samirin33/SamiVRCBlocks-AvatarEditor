@@ -22,6 +22,20 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         {
             var w = GetWindow<VRCFaceTrackingParamSetterEditor>();
             w.titleContent = new GUIContent("VRCFT Param Setter");
+            w.AssignAnimatorFromEditorWindow();
+        }
+
+        void OnEnable()
+        {
+            if (_animatorController == null)
+                AssignAnimatorFromEditorWindow();
+        }
+
+        void AssignAnimatorFromEditorWindow()
+        {
+            var controller = VRCAvatarParamSetterCore.GetEditingAnimatorWindowController();
+            if (controller != null)
+                _animatorController = controller;
         }
 
         void OnGUI()

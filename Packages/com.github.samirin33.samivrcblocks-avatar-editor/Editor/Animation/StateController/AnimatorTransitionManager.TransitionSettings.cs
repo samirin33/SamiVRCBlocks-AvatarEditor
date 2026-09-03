@@ -99,6 +99,13 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 !HasAnimatorTransitionInSelection())
                 return new List<TransitionRow>();
 
+            // 遷移元→遷移先の「関係」が同じトランジションだけが Unity 側で選ばれていて、
+            // 本ウィンドウ側の一覧が未選択（=内部バケットが None）のときは、
+            // 遷移元→遷移先の一致する一覧先頭 1 件を自動選択する。
+            var selectedEndpointMatch = TryGetFirstTransitionRowForUnitySelectedSameSrcDstTransition();
+            if (selectedEndpointMatch != null)
+                return new List<TransitionRow> { selectedEndpointMatch };
+
             var first = TryGetFirstListedTransitionRow();
             return first != null ? new List<TransitionRow> { first } : new List<TransitionRow>();
         }
@@ -109,6 +116,122 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 return _outgoing[0];
             if (_incoming.Count > 0)
                 return _incoming[0];
+            return null;
+        }
+
+        private TransitionRow TryGetFirstTransitionRowForUnitySelectedSameSrcDstTransition()
+        {
+            // 内部一覧が未選択のときのフォールバックを避け、
+            // Unity で選ばれているトランジションの「遷移元/遷移先」が全て同じなら先頭1件を返す。
+
+            var selectedTransitions = new List<AnimatorTransitionBase>();
+            var seen = new HashSet<int>();
+
+            void TryAdd(Object o)
+            {
+                if (o is not AnimatorTransitionBase tr)
+                    return;
+
+                var id = tr.GetInstanceID();
+                if (seen.Add(id))
+                    selectedTransitions.Add(tr);
+            }
+
+            foreach (var o in Selection.objects)
+                TryAdd(o);
+
+            foreach (var id in Selection.instanceIDs)
+            {
+                var o = EditorUtility.InstanceIDToObject(id);
+                TryAdd(o);
+            }
+
+            TryAdd(Selection.activeObject);
+
+            if (selectedTransitions.Count == 0)
+                return null;
+
+            // 複数遷移が選択されている場合でも、
+            // 「遷移元/遷移先（同一元→同一先）」が全て同じなら先頭マッチを返す。
+            // （要望: 遷移元/遷移先が同じものなら最初の1つを選択）
+            Object srcStateObj = null;
+            Object dstStateObj = null;
+            TransitionRow fallbackRow = null;
+
+            foreach (var selectedTr in selectedTransitions)
+            {
+                var selectedTrId = selectedTr.GetInstanceID();
+
+                var selectedRow = FindRowByTransitionId(_outgoing, selectedTrId) ??
+                                  FindRowByTransitionId(_incoming, selectedTrId);
+                if (selectedRow?.transition == null)
+                    return null;
+
+                ResolveEndpoints(
+                    selectedRow.group,
+                    selectedRow.transition,
+                    out _,
+                    out var srcObj,
+                    out _,
+                    out var dstObj);
+
+                if (srcObj == null || dstObj == null)
+                    return null;
+
+                if (srcStateObj == null)
+                {
+                    srcStateObj = srcObj;
+                    dstStateObj = dstObj;
+                    fallbackRow = selectedRow;
+                }
+                else if (!ReferenceEquals(srcStateObj, srcObj) ||
+                         !ReferenceEquals(dstStateObj, dstObj))
+                {
+                    // 遷移元/遷移先が一致しないので対象外。
+                    return null;
+                }
+            }
+
+            if (srcStateObj == null || dstStateObj == null)
+                return null;
+
+            // 表示順は Outgoing → Incoming。先頭1件が要件なのでこの順で探索する。
+            foreach (var row in _outgoing)
+            {
+                if (row?.transition == null) continue;
+                ResolveEndpoints(row.group, row.transition, out _, out var rowSrc, out _, out var rowDst);
+                if (rowSrc != null && rowDst != null &&
+                    ReferenceEquals(rowSrc, srcStateObj) &&
+                    ReferenceEquals(rowDst, dstStateObj))
+                    return row;
+            }
+
+            foreach (var row in _incoming)
+            {
+                if (row?.transition == null) continue;
+                ResolveEndpoints(row.group, row.transition, out _, out var rowSrc, out _, out var rowDst);
+                if (rowSrc != null && rowDst != null &&
+                    ReferenceEquals(rowSrc, srcStateObj) &&
+                    ReferenceEquals(rowDst, dstStateObj))
+                    return row;
+            }
+
+            // 何らかの理由で一致する行が見つからない場合は Unity 選択の行を返す。
+            return fallbackRow;
+        }
+
+        private static TransitionRow FindRowByTransitionId(List<TransitionRow> rows, int transitionId)
+        {
+            if (rows == null || rows.Count == 0)
+                return null;
+
+            for (var i = 0; i < rows.Count; i++)
+            {
+                var tr = rows[i].transition;
+                if (tr != null && tr.GetInstanceID() == transitionId)
+                    return rows[i];
+            }
+
             return null;
         }
 

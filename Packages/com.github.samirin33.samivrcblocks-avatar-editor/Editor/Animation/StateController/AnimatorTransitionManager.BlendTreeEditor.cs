@@ -51,9 +51,34 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             public bool mirror;
         }
 
+        // ---- 統一クリップボード ----
+
+        private enum BtClipboardKind { None, BlendTree, ChildMotion }
+        private enum BtCopyMode { Clone, Link }
+
+        private sealed class BtClipboard
+        {
+            public BtClipboardKind kind = BtClipboardKind.None;
+            public BtCopyMode copyMode = BtCopyMode.Clone;
+
+            // BlendTree 全体コピー用
+            public string blendTreeJson;
+
+            // ChildMotion 単体コピー用
+            public ChildMotion childMotion;
+
+            // Link コピー時に元の Motion の InstanceID を記録（リンク関係表示用）
+            public int linkedMotionInstanceId;
+            // Link コピー時に元の BlendTree の InstanceID を記録
+            public int linkedBlendTreeInstanceId;
+
+            public bool HasData => kind != BtClipboardKind.None;
+        }
+
+        private static readonly BtClipboard _btClipboard = new BtClipboard();
+
         // ---- 静的状態 ----
 
-        private static string _blendTreeClipboardJson;
         private static BlendTree _btEditorPinnedTarget;
         private static readonly Dictionary<int, ReorderableList> _btChildLists = new Dictionary<int, ReorderableList>();
         private static readonly Dictionary<int, List<ChildMotion>> _btChildBuffers = new Dictionary<int, List<ChildMotion>>();
@@ -75,8 +100,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private static readonly Dictionary<int, BtPreview2DState> _btPreview2D = new Dictionary<int, BtPreview2DState>();
         private static readonly Dictionary<int, int> _btPreview1DDataSig = new Dictionary<int, int>();
         private static readonly Dictionary<int, int> _btPreview2DDataSig = new Dictionary<int, int>();
-        private static ChildMotion _btChildClipboard;
-        private static bool _btChildClipboardHasValue;
+        // _btChildClipboard / _btChildClipboardHasValue は _btClipboard に統合済み
 
         /// <summary>プレビュー上をドラッグしたときの座標のスナップ（0 以下でスナップなし）</summary>
         private static float _btPreviewSnapStep = 0.5f;
@@ -124,13 +148,17 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             {
                 EditorGUILayout.LabelField("BlendTree", EditorStyles.boldLabel);
                 GUILayout.FlexibleSpace();
-                if (GUILayout.Button("コピー", GUILayout.Width(68f)))
-                    BtEditor_Copy(bt);
-                EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(_blendTreeClipboardJson));
+                if (GUILayout.Button("複製コピー", GUILayout.Width(80f)))
+                    BtEditor_CopyBlendTree(bt, BtCopyMode.Clone);
+                if (GUILayout.Button("リンクコピー", GUILayout.Width(88f)))
+                    BtEditor_CopyBlendTree(bt, BtCopyMode.Link);
+                EditorGUI.BeginDisabledGroup(!_btClipboard.HasData);
                 if (GUILayout.Button("ペースト", GUILayout.Width(68f)))
-                    BtEditor_Paste(bt, controller, assetPath);
+                    BtEditor_PasteUnified(bt, controller, assetPath);
                 EditorGUI.EndDisabledGroup();
             }
+            // ---- クリップボード情報表示 ----
+            BtEditor_DrawClipboardInfo();
 
             // ---- 変換行（内包⇔アセット） ----
             using (new EditorGUILayout.HorizontalScope())
@@ -300,7 +328,9 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             }
 
             list.drawHeaderCallback = rect => EditorGUI.LabelField(rect, "Motion");
-            list.elementHeight = EditorGUIUtility.singleLineHeight + 6f;
+            var sharedGroups = BtEditor_FindSharedMotionGroups(editableChildren);
+            var hasAnyShared = sharedGroups.Count > 0;
+            list.elementHeight = EditorGUIUtility.singleLineHeight + (hasAnyShared ? 8f : 6f);
             var pendingDeleteIndex = -1;
             list.drawElementCallback = (rect, index, _, _) =>
             {
@@ -311,7 +341,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 var y = rect.y + 2f;
                 var h = EditorGUIUtility.singleLineHeight;
                 var x = rect.x;
-                var actionsW = 84f;
+                var actionsW = 100f;
                 var motionW = Mathf.Min(220f, Mathf.Max(100f, rect.width * 0.38f));
                 var actionX = rect.xMax - actionsW;
 
@@ -337,20 +367,28 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     c.position = new Vector2(px, py);
                 }
 
-                var btnW = 26f;
-                if (GUI.Button(new Rect(actionX, y, btnW, h), "C", EditorStyles.miniButton))
+                var btnW = 22f;
+                var btnGap = 1f;
+                // リンク関係表示マーカー
+                if (BtEditor_IsLinkedMotion(c))
                 {
-                    _btChildClipboard = c;
-                    _btChildClipboardHasValue = true;
+                    var linkRect = new Rect(actionX - 18f, y, 16f, h);
+                    GUI.Label(linkRect, "🔗", EditorStyles.miniLabel);
                 }
-                using (new EditorGUI.DisabledScope(!_btChildClipboardHasValue))
+                var bx = actionX;
+                if (GUI.Button(new Rect(bx, y, btnW, h), "C", EditorStyles.miniButton))
+                    BtEditor_CopyChildMotion(c, BtCopyMode.Clone);
+                bx += btnW + btnGap;
+                if (GUI.Button(new Rect(bx, y, btnW, h), "L", EditorStyles.miniButton))
+                    BtEditor_CopyChildMotion(c, BtCopyMode.Link);
+                bx += btnW + btnGap;
+                using (new EditorGUI.DisabledScope(!_btClipboard.HasData))
                 {
-                    if (GUI.Button(new Rect(actionX + btnW + 2f, y, btnW, h), "P", EditorStyles.miniButton))
-                    {
-                        c = _btChildClipboard;
-                    }
+                    if (GUI.Button(new Rect(bx, y, btnW, h), "P", EditorStyles.miniButton))
+                        c = BtEditor_PasteAsChildMotion(c, bt, assetPath);
                 }
-                if (GUI.Button(new Rect(actionX + (btnW + 2f) * 2f, y, btnW, h), "X", EditorStyles.miniButton))
+                bx += btnW + btnGap;
+                if (GUI.Button(new Rect(bx, y, btnW, h), "X", EditorStyles.miniButton))
                 {
                     pendingDeleteIndex = index;
                 }
@@ -393,6 +431,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             }
 
             list.DoLayoutList();
+            BtEditor_DrawSharedMotionLinks(editableChildren, sharedGroups);
             BtEditor_HandleMotionDropIntoList(GUILayoutUtility.GetLastRect(), editableChildren, blendType, allParams);
             if (pendingDeleteIndex >= 0 && pendingDeleteIndex < editableChildren.Count)
             {
@@ -1624,25 +1663,272 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
         // ======================== コピー / ペースト ========================
 
-        private static void BtEditor_Copy(BlendTree bt)
+        // ======================== 統一コピー / ペースト ========================
+
+        /// <summary>BlendTree全体をクリップボードにコピーする。</summary>
+        private static void BtEditor_CopyBlendTree(BlendTree bt, BtCopyMode mode)
         {
             if (bt == null) return;
-            _blendTreeClipboardJson = JsonUtility.ToJson(BtEditor_Serialize(bt), true);
+            _btClipboard.kind = BtClipboardKind.BlendTree;
+            _btClipboard.copyMode = mode;
+            _btClipboard.blendTreeJson = JsonUtility.ToJson(BtEditor_Serialize(bt), true);
+            _btClipboard.childMotion = default;
+            _btClipboard.linkedBlendTreeInstanceId = bt.GetInstanceID();
+            _btClipboard.linkedMotionInstanceId = 0;
         }
 
-        private static void BtEditor_Paste(BlendTree bt, AnimatorController controller, string assetPath)
+        /// <summary>ChildMotion単体をクリップボードにコピーする。</summary>
+        private static void BtEditor_CopyChildMotion(ChildMotion c, BtCopyMode mode)
         {
-            if (bt == null || string.IsNullOrEmpty(_blendTreeClipboardJson)) return;
-            var data = JsonUtility.FromJson<BlendTreeNodeData>(_blendTreeClipboardJson);
-            if (data == null) return;
+            _btClipboard.kind = BtClipboardKind.ChildMotion;
+            _btClipboard.copyMode = mode;
+            _btClipboard.childMotion = c;
+            _btClipboard.blendTreeJson = null;
+            _btClipboard.linkedMotionInstanceId = c.motion != null ? c.motion.GetInstanceID() : 0;
+            _btClipboard.linkedBlendTreeInstanceId = 0;
 
-            Undo.RecordObject(bt, "Paste BlendTree");
-            BtEditor_DestroyEmbeddedSubtrees(bt, assetPath);
-            BtEditor_ApplyData(bt, data, assetPath);
-            EditorUtility.SetDirty(bt);
-            if (controller != null) EditorUtility.SetDirty(controller);
-            AssetDatabase.SaveAssets();
-            InternalEditorUtility.RepaintAllViews();
+            // ChildMotion もシリアライズしておく（複製ペースト用にBlendTree子ツリーの場合）
+            if (c.motion is BlendTree subBt)
+            {
+                _btClipboard.blendTreeJson = JsonUtility.ToJson(BtEditor_Serialize(subBt), true);
+                _btClipboard.linkedBlendTreeInstanceId = subBt.GetInstanceID();
+            }
+        }
+
+        /// <summary>統一ペースト: クリップボードの内容をBlendTree全体に適用する。</summary>
+        private static void BtEditor_PasteUnified(BlendTree bt, AnimatorController controller, string assetPath)
+        {
+            if (bt == null || !_btClipboard.HasData) return;
+
+            if (_btClipboard.kind == BtClipboardKind.BlendTree)
+            {
+                if (string.IsNullOrEmpty(_btClipboard.blendTreeJson)) return;
+                var data = JsonUtility.FromJson<BlendTreeNodeData>(_btClipboard.blendTreeJson);
+                if (data == null) return;
+
+                if (_btClipboard.copyMode == BtCopyMode.Link)
+                {
+                    // リンクペースト: コピー元のBlendTreeを探して参照を差し替える
+                    var srcBt = EditorUtility.InstanceIDToObject(_btClipboard.linkedBlendTreeInstanceId) as BlendTree;
+                    if (srcBt != null && srcBt != bt)
+                    {
+                        // 現在のbtの代わりにsrcBtを参照するようコントローラ内の参照を差し替え
+                        if (controller != null)
+                        {
+                            Undo.RegisterCompleteObjectUndo(controller, "Link Paste BlendTree");
+                            BtEditor_ReplaceRefsInController(controller, bt, srcBt);
+                            EditorUtility.SetDirty(controller);
+                            AssetDatabase.SaveAssets();
+                            Selection.activeObject = srcBt;
+                            EditorGUIUtility.PingObject(srcBt);
+                            InternalEditorUtility.RepaintAllViews();
+                            return;
+                        }
+                    }
+                    // コピー元が見つからない場合はデータ上書き（フォールバック）
+                }
+
+                // 複製ペースト（またはフォールバック）
+                Undo.RecordObject(bt, "Paste BlendTree");
+                BtEditor_DestroyEmbeddedSubtrees(bt, assetPath);
+                BtEditor_ApplyData(bt, data, assetPath);
+                EditorUtility.SetDirty(bt);
+                if (controller != null) EditorUtility.SetDirty(controller);
+                AssetDatabase.SaveAssets();
+                InternalEditorUtility.RepaintAllViews();
+            }
+            else if (_btClipboard.kind == BtClipboardKind.ChildMotion)
+            {
+                // ChildMotionをBlendTree全体にペーストする場合: childrenに追加
+                var editableChildren = bt.children.ToList();
+                var newChild = BtEditor_PasteAsChildMotion(_btClipboard.childMotion, bt, assetPath);
+                editableChildren.Add(newChild);
+                Undo.RecordObject(bt, "Paste ChildMotion into BlendTree");
+                bt.children = editableChildren.ToArray();
+                EditorUtility.SetDirty(bt);
+                if (controller != null) EditorUtility.SetDirty(controller);
+                AssetDatabase.SaveAssets();
+                InternalEditorUtility.RepaintAllViews();
+            }
+        }
+
+        /// <summary>クリップボードの内容をChildMotionとしてペーストする。</summary>
+        private static ChildMotion BtEditor_PasteAsChildMotion(ChildMotion fallback, BlendTree hostBt, string assetPath)
+        {
+            if (!_btClipboard.HasData) return fallback;
+
+            if (_btClipboard.kind == BtClipboardKind.ChildMotion)
+            {
+                if (_btClipboard.copyMode == BtCopyMode.Link)
+                {
+                    // リンク: 同じMotion参照をそのまま使う
+                    return _btClipboard.childMotion;
+                }
+                else
+                {
+                    // 複製: 子がBlendTreeの場合は新しいオブジェクトとして複製
+                    var c = _btClipboard.childMotion;
+                    if (c.motion is BlendTree subBt && !string.IsNullOrEmpty(_btClipboard.blendTreeJson))
+                    {
+                        var data = JsonUtility.FromJson<BlendTreeNodeData>(_btClipboard.blendTreeJson);
+                        if (data != null && hostBt != null && !string.IsNullOrEmpty(assetPath))
+                        {
+                            var targetAsset = AssetDatabase.LoadMainAssetAtPath(assetPath);
+                            if (targetAsset != null)
+                            {
+                                var newSubBt = new BlendTree();
+                                AssetDatabase.AddObjectToAsset(newSubBt, targetAsset);
+                                BtEditor_ConfigureEmbeddedBlendTree(newSubBt);
+                                BtEditor_ApplyData(newSubBt, data, assetPath);
+                                c.motion = newSubBt;
+                            }
+                        }
+                    }
+                    return c;
+                }
+            }
+            else if (_btClipboard.kind == BtClipboardKind.BlendTree)
+            {
+                if (_btClipboard.copyMode == BtCopyMode.Link)
+                {
+                    // リンク: コピー元BlendTreeをそのまま参照
+                    var srcBt = EditorUtility.InstanceIDToObject(_btClipboard.linkedBlendTreeInstanceId) as BlendTree;
+                    if (srcBt != null)
+                    {
+                        var c = fallback;
+                        c.motion = srcBt;
+                        return c;
+                    }
+                }
+
+                // 複製: JSONから新しいBlendTreeを作成
+                if (!string.IsNullOrEmpty(_btClipboard.blendTreeJson) && hostBt != null && !string.IsNullOrEmpty(assetPath))
+                {
+                    var data = JsonUtility.FromJson<BlendTreeNodeData>(_btClipboard.blendTreeJson);
+                    if (data != null)
+                    {
+                        var targetAsset = AssetDatabase.LoadMainAssetAtPath(assetPath);
+                        if (targetAsset != null)
+                        {
+                            var newBt = new BlendTree();
+                            AssetDatabase.AddObjectToAsset(newBt, targetAsset);
+                            BtEditor_ConfigureEmbeddedBlendTree(newBt);
+                            BtEditor_ApplyData(newBt, data, assetPath);
+                            var c = fallback;
+                            c.motion = newBt;
+                            return c;
+                        }
+                    }
+                }
+            }
+
+            return fallback;
+        }
+
+        /// <summary>指定のChildMotionがリンクコピーで貼り付けられたものかを判定する。</summary>
+        private static bool BtEditor_IsLinkedMotion(ChildMotion c)
+        {
+            if (c.motion == null) return false;
+            if (!_btClipboard.HasData || _btClipboard.copyMode != BtCopyMode.Link) return false;
+
+            var motionId = c.motion.GetInstanceID();
+            if (_btClipboard.linkedMotionInstanceId != 0 && motionId == _btClipboard.linkedMotionInstanceId)
+                return true;
+            if (_btClipboard.linkedBlendTreeInstanceId != 0 && motionId == _btClipboard.linkedBlendTreeInstanceId)
+                return true;
+            return false;
+        }
+
+        /// <summary>
+        /// リスト内で同じMotionを共有（リンク）しているChildMotionのインデックスを収集する。
+        /// BlendTree子ツリーで同一のInstanceIDを持つものをグルーピングする。
+        /// </summary>
+        private static Dictionary<int, List<int>> BtEditor_FindSharedMotionGroups(IReadOnlyList<ChildMotion> children)
+        {
+            var groups = new Dictionary<int, List<int>>();
+            if (children == null) return groups;
+
+            for (var i = 0; i < children.Count; i++)
+            {
+                var m = children[i].motion;
+                if (m == null) continue;
+                var id = m.GetInstanceID();
+                if (!groups.TryGetValue(id, out var list))
+                {
+                    list = new List<int>();
+                    groups[id] = list;
+                }
+                list.Add(i);
+            }
+
+            // 単独参照は除外
+            var keys = groups.Keys.ToList();
+            foreach (var k in keys)
+            {
+                if (groups[k].Count < 2)
+                    groups.Remove(k);
+            }
+            return groups;
+        }
+
+        /// <summary>同じMotionを共有しているリンク関係をリスト下部に表示する。</summary>
+        private static void BtEditor_DrawSharedMotionLinks(IReadOnlyList<ChildMotion> children, Dictionary<int, List<int>> sharedGroups)
+        {
+            if (sharedGroups == null || sharedGroups.Count == 0)
+                return;
+
+            var linkStyle = new GUIStyle(EditorStyles.miniLabel)
+            {
+                richText = true,
+                wordWrap = true
+            };
+            linkStyle.normal.textColor = new Color(0.4f, 0.75f, 1f, 1f);
+
+            EditorGUILayout.LabelField("🔗 リンク関係", EditorStyles.miniLabel);
+            foreach (var kvp in sharedGroups)
+            {
+                var motionObj = EditorUtility.InstanceIDToObject(kvp.Key);
+                var motionName = motionObj != null ? motionObj.name : "(?)";
+                var indices = string.Join(", ", kvp.Value.Select(i => $"#{i + 1}"));
+                EditorGUILayout.LabelField($"  {motionName}: {indices} が同一参照", linkStyle);
+            }
+            EditorGUILayout.Space(2f);
+        }
+
+        /// <summary>クリップボード情報の表示。</summary>
+        private static void BtEditor_DrawClipboardInfo()
+        {
+            if (!_btClipboard.HasData) return;
+
+            var modeLabel = _btClipboard.copyMode == BtCopyMode.Link ? "リンク" : "複製";
+            var kindLabel = _btClipboard.kind == BtClipboardKind.BlendTree ? "BlendTree" : "ChildMotion";
+            var info = $"📋 クリップボード: {kindLabel} ({modeLabel})";
+
+            if (_btClipboard.copyMode == BtCopyMode.Link)
+            {
+                Object linkedObj = null;
+                if (_btClipboard.linkedBlendTreeInstanceId != 0)
+                    linkedObj = EditorUtility.InstanceIDToObject(_btClipboard.linkedBlendTreeInstanceId);
+                else if (_btClipboard.linkedMotionInstanceId != 0)
+                    linkedObj = EditorUtility.InstanceIDToObject(_btClipboard.linkedMotionInstanceId);
+
+                if (linkedObj != null)
+                    info += $" → {linkedObj.name}";
+                else
+                    info += " → (元オブジェクト消失)";
+            }
+
+            var style = new GUIStyle(EditorStyles.helpBox)
+            {
+                fontSize = 10,
+                richText = true
+            };
+            var color = _btClipboard.copyMode == BtCopyMode.Link
+                ? new Color(0.3f, 0.7f, 1f, 0.15f)
+                : new Color(0.5f, 0.5f, 0.5f, 0.1f);
+            var rect = EditorGUILayout.GetControlRect(false, 20f);
+            EditorGUI.DrawRect(rect, color);
+            EditorGUI.LabelField(rect, info, style);
         }
 
         private static BlendTreeNodeData BtEditor_Serialize(BlendTree bt)

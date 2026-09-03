@@ -259,7 +259,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
         /// <summary>
         /// Unity で <see cref="AnimatorTransitionBase"/> を複数選択しているとき、
-        /// 外向き／内向き一覧のうち該当する行をすべて選択する（未操作時の既定）。
+        /// 外向き／内向き一覧のうち該当する行を選択する（未操作時の既定）。
+        /// 同じ遷移元・遷移先ペアを持つ行が複数ある場合は、先頭の1行だけを選択する。
         /// </summary>
         private void ApplyDefaultRowSelectionWhenUnityHasMultipleTransitionsSelected()
         {
@@ -279,21 +280,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (selectedTransitionIds.Count < 2)
                 return;
 
-            var outgoingHits = new List<int>();
-            for (var i = 0; i < _outgoing.Count; i++)
-            {
-                var t = _outgoing[i].transition;
-                if (t != null && selectedTransitionIds.Contains(t.GetInstanceID()))
-                    outgoingHits.Add(i);
-            }
-
-            var incomingHits = new List<int>();
-            for (var i = 0; i < _incoming.Count; i++)
-            {
-                var t = _incoming[i].transition;
-                if (t != null && selectedTransitionIds.Contains(t.GetInstanceID()))
-                    incomingHits.Add(i);
-            }
+            var outgoingHits = FilterByUniqueEndpointPair(_outgoing, selectedTransitionIds);
+            var incomingHits = FilterByUniqueEndpointPair(_incoming, selectedTransitionIds);
 
             if (outgoingHits.Count == 0 && incomingHits.Count == 0)
                 return;
@@ -313,6 +301,39 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 foreach (var i in incomingHits)
                     _selectedRowIndices.Add(i);
             }
+        }
+
+        /// <summary>
+        /// rows のうち selectedIds に含まれる行を抽出し、遷移元・遷移先オブジェクトの組み合わせが
+        /// 同じ行が複数あれば最初の1行だけを残したインデックスリストを返す。
+        /// </summary>
+        private static List<int> FilterByUniqueEndpointPair(List<TransitionRow> rows, HashSet<int> selectedIds)
+        {
+            var result = new List<int>();
+            // キーは (srcInstanceID, dstInstanceID)
+            var seenPairs = new HashSet<(int, int)>();
+
+            for (var i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                if (row.transition == null) continue;
+                if (!selectedIds.Contains(row.transition.GetInstanceID())) continue;
+
+                ResolveEndpoints(row.group, row.transition,
+                    out _, out var srcObj,
+                    out _, out var dstObj);
+
+                var srcId = srcObj != null ? srcObj.GetInstanceID() : 0;
+                var dstId = dstObj != null ? dstObj.GetInstanceID() : 0;
+                var pair = (srcId, dstId);
+
+                if (!seenPairs.Add(pair))
+                    continue; // 同じペアがすでにあるためスキップ
+
+                result.Add(i);
+            }
+
+            return result;
         }
 
         private static void CollectIncomingToState(
