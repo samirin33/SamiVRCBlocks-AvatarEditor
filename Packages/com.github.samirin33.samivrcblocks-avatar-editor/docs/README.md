@@ -12,6 +12,7 @@
 | **Animation** | Animation Clip Selector / AnimatorStateController / Animation Clip Binding Path Replace / Animator Controller Clip Replace |
 | **Parameter** | VRChat Avatar Param Setter / VRChat FaceTracking Param Setter |
 | **Performance** | FPS Limiter / Image Compressor / Item Analyzer |
+| **Menu** | Rich Text Editor |
 | **Settings** | Animator Default Setting / Animator Binding |
 
 ## ドキュメント一覧
@@ -31,3 +32,4 @@
 | 11 | [11-animator-state-controller.md](features/11-animator-state-controller.md) | AnimatorStateController |
 | 12 | [12-image-compressor.md](features/12-image-compressor.md) | Image Compressor |
 | 13 | [13-item-analyzer.md](features/13-item-analyzer.md) | Item Analyzer |
+| 14 | [14-menu-rich-text-editor.md](features/14-menu-rich-text-editor.md) | Menu Rich Text Editor |
