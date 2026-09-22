@@ -17,6 +17,11 @@ public class PackageAssetInfo
     /// </summary>
     public string[] relatedFolders;
 
+    /// <summary>
+    /// インポート時に一度削除してから再インポートするフォルダ。未指定のフォルダは削除しない。
+    /// </summary>
+    public string[] superReimportFolders;
+
     [Serializable]
     public class UrlInfo
     {

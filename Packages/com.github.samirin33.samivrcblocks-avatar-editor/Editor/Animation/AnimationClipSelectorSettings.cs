@@ -20,6 +20,16 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         public List<string> collapsedKeys = new List<string>();
     }
 
+    /// <summary>競合警告を出さないパス＋属性。Controller アセット単位。</summary>
+    [Serializable]
+    public class IgnoredConflictEntry
+    {
+        public string controllerPath;
+        public string path;
+        public string propertyName;
+        public string typeName;
+    }
+
     /// <summary>
     /// Animation Clip Selector の表示設定とAnimator毎の最後に表示したクリップを保存するアセット。
     /// </summary>
@@ -30,6 +40,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         [SerializeField] private List<ControllerClipEntry> _lastDisplayedClipPerController = new List<ControllerClipEntry>();
         [SerializeField] private List<AnimationClip> _ignoreClips = new List<AnimationClip>();
         [SerializeField] private List<string> _defaultIgnoreGUIDs = new List<string> { "4de039275b65be24c8f0a641d7a44924" };
+        [SerializeField] private List<IgnoredConflictEntry> _ignoredConflicts = new List<IgnoredConflictEntry>();
         [SerializeField] private List<ControllerFoldoutStateEntry> _foldoutStates = new List<ControllerFoldoutStateEntry>();
 
         public float ItemSpacing
@@ -57,6 +68,65 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             if (string.IsNullOrEmpty(path)) return false;
             var guid = AssetDatabase.AssetPathToGUID(path);
             return !string.IsNullOrEmpty(guid) && _defaultIgnoreGUIDs.Contains(guid);
+        }
+
+        /// <summary>競合詳細で「無視」したパス＋属性の一覧。</summary>
+        public IReadOnlyList<IgnoredConflictEntry> IgnoredConflicts => _ignoredConflicts;
+
+        /// <summary>指定 Controller のパス＋属性が競合警告の対象外かどうか。</summary>
+        public bool IsIgnoredConflict(string controllerPath, string path, string propertyName, string typeName)
+        {
+            if (string.IsNullOrEmpty(controllerPath) || _ignoredConflicts == null) return false;
+            path = path ?? "";
+            propertyName = propertyName ?? "";
+            typeName = typeName ?? "";
+
+            for (int i = 0; i < _ignoredConflicts.Count; i++)
+            {
+                var entry = _ignoredConflicts[i];
+                if (entry == null || entry.controllerPath != controllerPath) continue;
+                if ((entry.path ?? "") == path
+                    && (entry.propertyName ?? "") == propertyName
+                    && (entry.typeName ?? "") == typeName)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>指定 Controller のパス＋属性を競合警告の対象外にする。既に登録済みなら false。</summary>
+        public bool IgnoreConflict(string controllerPath, string path, string propertyName, string typeName)
+        {
+            if (string.IsNullOrEmpty(controllerPath)) return false;
+            path = path ?? "";
+            propertyName = propertyName ?? "";
+            typeName = typeName ?? "";
+            if (IsIgnoredConflict(controllerPath, path, propertyName, typeName))
+                return false;
+
+            if (_ignoredConflicts == null)
+                _ignoredConflicts = new List<IgnoredConflictEntry>();
+
+            _ignoredConflicts.Add(new IgnoredConflictEntry
+            {
+                controllerPath = controllerPath,
+                path = path,
+                propertyName = propertyName,
+                typeName = typeName
+            });
+            EditorUtility.SetDirty(this);
+            return true;
+        }
+
+        /// <summary>無視リストから指定インデックスのコンフリクトを外す。</summary>
+        public bool RemoveIgnoredConflictAt(int index)
+        {
+            if (_ignoredConflicts == null || index < 0 || index >= _ignoredConflicts.Count)
+                return false;
+
+            _ignoredConflicts.RemoveAt(index);
+            EditorUtility.SetDirty(this);
+            return true;
         }
 
         public AnimationClip GetLastDisplayedClip(string controllerPath)

@@ -66,9 +66,20 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         private void OnDisable()
         {
             Undo.undoRedoPerformed -= RefreshConflictEntries;
+            AnimationClipSelectorStateManager.FlushPendingSave();
         }
 
         private void RefreshConflictEntries()
+        {
+            AnimationClipSelectorStateManager.RequestSave();
+            if (_clip == null || _root == null) return;
+            var entries = AnimationClipSelector.GetConflictEntriesForClip(_clip, _root);
+            _entries = entries != null ? new List<ConflictEntry>(entries) : new List<ConflictEntry>();
+            Repaint();
+        }
+
+        /// <summary>Preferences から無視を戻したときなど、ウィンドウ外から一覧を更新する。</summary>
+        internal void RefreshConflictEntriesFromOutside()
         {
             if (_clip == null || _root == null) return;
             var entries = AnimationClipSelector.GetConflictEntriesForClip(_clip, _root);
@@ -162,6 +173,17 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 }
                 if (pathRect.Contains(Event.current.mousePosition))
                     EditorGUIUtility.AddCursorRect(pathRect, MouseCursor.Link);
+
+                EditorGUILayout.Space(4);
+
+                if (GUILayout.Button(new GUIContent(
+                        "このコンフリクトを無視する",
+                        "この Controller では、このパス＋属性の競合警告を出さないようにします。Preferences の Animation Clip Selector から戻せます。"),
+                    GUILayout.MinWidth(180)))
+                {
+                    if (AnimationClipSelector.IgnoreConflict(_root, entry.Path, entry.PropertyName, entry.TypeName))
+                        toRemoveEntries.Add(entry);
+                }
 
                 EditorGUILayout.Space(4);
 

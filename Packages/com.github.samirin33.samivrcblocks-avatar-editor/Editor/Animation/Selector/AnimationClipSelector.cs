@@ -120,6 +120,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         private static void OnUndoRedoPerformed()
         {
             _pathConflictCacheInvalidated = true;
+            AnimationClipSelectorStateManager.RequestSave();
         }
 
         #region 設定・Animation ウィンドウ
@@ -540,6 +541,9 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
 
                 if (baseController == null) return cache;
 
+                var controllerAssetPath = AssetDatabase.GetAssetPath(baseController);
+                var selectorSettings = AssetDatabase.LoadAssetAtPath<AnimationClipSelectorSettings>(SettingsAssetPath);
+
                 var clipBindingKeyMap = new Dictionary<AnimationClip, HashSet<string>>();
                 foreach (var c in capturedClips)
                 {
@@ -597,11 +601,14 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                             .ToList();
                         if (otherLayerEntries.Count == 0) continue;
 
-                        conflictCount++;
                         var parts = key.Split('|');
                         var path = parts.Length > 0 ? parts[0] : "";
                         var property = parts.Length > 1 ? parts[1] : "";
                         var typeName = parts.Length > 2 ? parts[2] : "";
+                        if (selectorSettings != null && selectorSettings.IsIgnoredConflict(controllerAssetPath, path, property, typeName))
+                            continue;
+
+                        conflictCount++;
                         var lastObjectName = string.IsNullOrEmpty(path) ? "" : path.Split('/').LastOrDefault() ?? path;
 
                         var entry = new ConflictEntry
@@ -654,6 +661,42 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             _pathConflictCacheInvalidated = true;
             var w = GetWindow<AnimationClipSelector>(false);
             if (w != null) w.Repaint();
+        }
+
+        /// <summary>
+        /// 指定ルートの Controller について、パス＋属性の競合警告を出さないようにする。
+        /// 同じ Controller 上のほかの Clip でも、そのパス＋属性は警告対象外になる。
+        /// </summary>
+        internal static bool IgnoreConflict(GameObject root, string path, string propertyName, string typeName)
+        {
+            var animator = GetAnimatorFromRoot(root);
+            var controllerPath = GetControllerPath(animator != null ? animator.runtimeAnimatorController : null);
+            if (string.IsNullOrEmpty(controllerPath)) return false;
+
+            var settings = LoadOrCreateSettings();
+            if (settings == null) return false;
+            if (settings.IsIgnoredConflict(controllerPath, path, propertyName, typeName))
+                return false;
+
+            Undo.RecordObject(settings, "このコンフリクトを無視");
+            if (!settings.IgnoreConflict(controllerPath, path, propertyName, typeName))
+                return false;
+
+            AnimationClipSelectorStateManager.SetSettingsInstance(settings);
+            AnimationClipSelectorStateManager.RequestSave();
+            InvalidatePathConflictCache();
+            return true;
+        }
+
+        /// <summary>開いている競合詳細ウィンドウの一覧を、現在の無視設定で作り直す。</summary>
+        internal static void RefreshOpenConflictDetailsWindows()
+        {
+            var windows = Resources.FindObjectsOfTypeAll<ClipConflictDetailsWindow>();
+            for (int i = 0; i < windows.Length; i++)
+            {
+                if (windows[i] == null) continue;
+                windows[i].RefreshConflictEntriesFromOutside();
+            }
         }
 
         /// <summary>Selector の表示を更新する。Missing バインディング操作後などに呼ぶ。</summary>

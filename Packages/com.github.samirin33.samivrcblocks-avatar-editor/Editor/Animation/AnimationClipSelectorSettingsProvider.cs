@@ -18,7 +18,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             return new SettingsProvider(SettingsPath, SettingsScope.User)
             {
                 label = "Animation Clip Selector",
-                keywords = new HashSet<string>(new[] { "Animation", "Clip", "Selector", "競合", "GUID", "ignore" }),
+                keywords = new HashSet<string>(new[] { "Animation", "Clip", "Selector", "競合", "GUID", "ignore", "無視" }),
                 guiHandler = OnGUI
             };
         }
@@ -62,6 +62,45 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                     AnimationClipSelector.InvalidatePathConflictCache();
                 }
 
+                EditorGUILayout.Space(8);
+                EditorGUILayout.LabelField("無視しているコンフリクト", EditorStyles.boldLabel);
+                EditorGUILayout.HelpBox(
+                    "競合詳細ウィンドウの「このコンフリクトを無視する」で追加したパス＋属性です。戻すと警告が再表示されます。",
+                    MessageType.Info);
+
+                var ignored = settings.IgnoredConflicts;
+                if (ignored == null || ignored.Count == 0)
+                {
+                    EditorGUILayout.LabelField("なし", EditorStyles.miniLabel);
+                }
+                else
+                {
+                    var removeIndex = -1;
+                    for (int i = 0; i < ignored.Count; i++)
+                    {
+                        var entry = ignored[i];
+                        if (entry == null) continue;
+
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUILayout.LabelField(new GUIContent(FormatIgnoredConflict(entry), entry.controllerPath + "\n" + entry.path), GUILayout.MinWidth(80));
+                        if (GUILayout.Button("戻す", GUILayout.Width(48)))
+                            removeIndex = i;
+                        EditorGUILayout.EndHorizontal();
+                    }
+
+                    if (removeIndex >= 0)
+                    {
+                        Undo.RecordObject(settings, "無視したコンフリクトを戻す");
+                        if (settings.RemoveIgnoredConflictAt(removeIndex))
+                        {
+                            AnimationClipSelectorStateManager.SetSettingsInstance(settings);
+                            AnimationClipSelectorStateManager.RequestSave();
+                            AnimationClipSelector.InvalidatePathConflictCache();
+                            AnimationClipSelector.RefreshOpenConflictDetailsWindows();
+                        }
+                    }
+                }
+
                 EditorGUILayout.Space(4);
                 if (GUILayout.Button("Animation Clip Selector を開く", GUILayout.Height(22)))
                     AnimationClipSelector.Open();
@@ -84,6 +123,19 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             AssetDatabase.CreateAsset(settings, path);
             AssetDatabase.SaveAssets();
             return settings;
+        }
+
+        static string FormatIgnoredConflict(IgnoredConflictEntry entry)
+        {
+            var controllerName = string.IsNullOrEmpty(entry.controllerPath)
+                ? "(Controller 不明)"
+                : Path.GetFileNameWithoutExtension(entry.controllerPath);
+            var target = string.IsNullOrEmpty(entry.path) ? "(ルート)" : entry.path;
+            if (!string.IsNullOrEmpty(entry.propertyName))
+                target += "." + entry.propertyName;
+            if (!string.IsNullOrEmpty(entry.typeName))
+                target += " [" + entry.typeName + "]";
+            return controllerName + ": " + target;
         }
     }
 }

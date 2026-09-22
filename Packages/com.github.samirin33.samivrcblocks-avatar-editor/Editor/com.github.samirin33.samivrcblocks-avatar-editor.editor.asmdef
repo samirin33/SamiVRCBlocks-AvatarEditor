@@ -4,8 +4,7 @@
     "references": [
         "com.github.samirin33.samivrcblocks-avatar-editor.runtime",
         "com.github.samirin33.samirin-vrc-utility.editor",
-        "VRC.SDK3.Dynamics.Constraint",
-        "Unity.TextMeshPro"
+        "VRC.SDK3.Dynamics.Constraint"
     ],
     "includePlatforms": [
         "Editor"
@@ -16,12 +15,6 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [
-        {
-            "name": "com.unity.textmeshpro",
-            "expression": "",
-            "define": "SAMIVRC_HAS_TMPRO"
-        }
-    ],
+    "versionDefines": [],
     "noEngineReferences": false
 }
