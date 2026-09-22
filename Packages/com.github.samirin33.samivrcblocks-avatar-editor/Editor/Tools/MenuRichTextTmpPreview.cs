@@ -32,13 +32,13 @@ namespace SamiVRCBlocksAvatar.Editor
         }
 
         PreviewRenderUtility _preview;
+#if SAMIVRC_HAS_TMPRO
         Texture _lastTexture;
         string _lastText;
         Color _lastBg;
         int _lastW;
         int _lastH;
         bool _fontMissing;
-#if SAMIVRC_HAS_TMPRO
         TextMeshPro _tmp;
         static TMP_FontAsset _notoSansJpFont;
         static TMP_FontAsset _previewHostFont;
@@ -78,8 +78,8 @@ namespace SamiVRCBlocksAvatar.Editor
                 if (go != null)
                     UnityEngine.Object.DestroyImmediate(go);
             }
-#endif
             _lastTexture = null;
+#endif
             if (_preview != null)
             {
                 _preview.Cleanup();

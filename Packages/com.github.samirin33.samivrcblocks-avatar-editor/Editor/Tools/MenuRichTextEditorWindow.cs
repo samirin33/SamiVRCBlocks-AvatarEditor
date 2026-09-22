@@ -101,7 +101,6 @@ namespace SamiVRCBlocksAvatar.Editor
         IMGUIContainer _formatGui;
         IMGUIContainer _statusGui;
         bool _suppressFieldCallback;
-        bool _bodyFocused;
         bool _draggingSidebar;
         int _pendingSelStart;
         int _pendingSelEnd;
@@ -299,8 +298,6 @@ namespace SamiVRCBlocksAvatar.Editor
             ApplyBodyFieldFont();
             _bodyField.RegisterCallback<AttachToPanelEvent>(_ => ApplyBodyFieldFont());
             _bodyField.RegisterValueChangedCallback(OnBodyFieldChanged);
-            _bodyField.RegisterCallback<FocusInEvent>(_ => _bodyFocused = true);
-            _bodyField.RegisterCallback<FocusOutEvent>(_ => _bodyFocused = false);
             // 本文をクリックしたら保持選択をいったん捨て、ドラッグで付け直す
             _bodyField.RegisterCallback<PointerDownEvent>(_ =>
             {

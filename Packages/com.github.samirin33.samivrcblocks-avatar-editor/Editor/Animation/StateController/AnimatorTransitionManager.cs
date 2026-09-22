@@ -93,18 +93,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private ReorderableList _reorderIncoming;
         private Vector2 _scroll;
 
-        [Flags]
-        private enum PanelVisibility
-        {
-            None = 0,
-            TransitionList = 1 << 0,
-            SettingsAndConditions = 1 << 1,
-            Clipboard = 1 << 2,
-            All = TransitionList | SettingsAndConditions | Clipboard
-        }
-
-        private PanelVisibility _visiblePanels = PanelVisibility.All;
-
         private bool _foldoutClipboardPanel = false;
         private readonly List<bool> _clipboardSlotFold = new List<bool>();
         private readonly List<bool> _clipboardSlotFoldBlend = new List<bool>();
@@ -261,18 +249,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             // }
 
             // EditorGUILayout.Space(6f);
-        }
-
-        private static void TogglePanel(ref PanelVisibility flags, PanelVisibility bit, string label, float width)
-        {
-            var on = (flags & bit) != 0;
-            var n = EditorGUILayout.ToggleLeft(label, on, GUILayout.Width(width));
-            if (n == on)
-                return;
-            if (n)
-                flags |= bit;
-            else
-                flags &= ~bit;
         }
 
         private void DrawMainContent()
