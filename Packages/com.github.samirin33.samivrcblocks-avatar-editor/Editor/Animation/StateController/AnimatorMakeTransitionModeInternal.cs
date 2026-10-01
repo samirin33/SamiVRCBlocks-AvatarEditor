@@ -260,7 +260,82 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private static bool _active;
         private static double _startedAt;
         private static double _notificationHideAt;
+        private static double _lastLeftClickTime = -1d;
+        private static int _backgroundCancelGeneration;
         private static EditorWindow _notificationWindow;
+        private static AnimatorTransitionDestinationPickerWindow _destinationPicker;
+
+        [InitializeOnLoadMethod]
+        private static void RegisterGlobalEditorEvents()
+        {
+            var field = typeof(EditorApplication).GetField(
+                "globalEventHandler",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            if (field == null)
+                return;
+
+            var current = field.GetValue(null) as EditorApplication.CallbackFunction;
+            field.SetValue(null, current + OnGlobalEditorEvent);
+        }
+
+        private static void OnGlobalEditorEvent()
+        {
+            var e = Event.current;
+            if (e == null)
+                return;
+
+            if (e.type == EventType.MouseDown && e.button == 0)
+                _lastLeftClickTime = EditorApplication.timeSinceStartup;
+
+            if (!_active)
+                return;
+
+            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
+            {
+                Cancel();
+                e.Use();
+                return;
+            }
+
+            if (e.type == EventType.MouseDown && e.button == 0 && IsMouseOverAnimatorWindow())
+                ArmBackgroundCancelCheck();
+        }
+
+        private static bool IsMouseOverAnimatorWindow()
+        {
+            var over = EditorWindow.mouseOverWindow;
+            if (over == null || over is AnimatorTransitionDestinationPickerWindow)
+                return false;
+
+            var toolType = AnimatorMakeTransitionModeInternal.GetCachedAnimatorControllerToolType();
+            return toolType != null && toolType.IsInstanceOfType(over);
+        }
+
+        /// <summary>
+        /// クリック処理のあとで選択を見る。空白クリックは表示中ステートマシンのままなのでキャンセルする。
+        /// ノード選択では <see cref="OnSelectionChanged"/> が先に遷移を作る。
+        /// </summary>
+        private static void ArmBackgroundCancelCheck()
+        {
+            var generation = ++_backgroundCancelGeneration;
+            EditorApplication.delayCall += () => CheckBackgroundCancelAfterClick(generation);
+        }
+
+        private static void CheckBackgroundCancelAfterClick(int generation)
+        {
+            if (generation != _backgroundCancelGeneration || !_active)
+                return;
+
+            var selected = Selection.activeObject;
+            if (selected is AnimatorState)
+                return;
+            if (AnimatorGraphDestinationResolver.IsAnimatorExitGraphNode(selected))
+                return;
+            if (selected is AnimatorStateMachine sm && !IsBackgroundGraphSelection(sm))
+                return;
+
+            Cancel();
+        }
 
         public static bool IsActive => _active;
 
@@ -290,7 +365,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             //     sourceState);
 
             TryShowNotificationOnAnimatorWindow(
-                "遷移先のステートを選択（Escでキャンセル）");
+                "遷移先のステートを選択（Escまたは空白クリックでキャンセル）");
 
             return true;
         }
@@ -320,7 +395,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             //     hostStateMachine);
 
             TryShowNotificationOnAnimatorWindow(
-                "Any State の遷移先を選択（Escでキャンセル）");
+                "Any State の遷移先を選択（Escまたは空白クリックでキャンセル）");
 
             return true;
         }
@@ -383,6 +458,9 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 var anyDestSm = Selection.activeObject as AnimatorStateMachine;
 
                 if (anyDestState == null && anyDestSm == null)
+                    return;
+
+                if (anyDestSm != null && TryConsumeBackgroundClick(anyDestSm))
                     return;
 
                 if (anyDestSm != null && anyDestSm == _anyStateHost)
@@ -486,18 +564,15 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 }
                 else if (destSm != null)
                 {
+                    if (TryConsumeBackgroundClick(destSm))
+                        return;
+
                     var pathSm = AssetDatabase.GetAssetPath(destSm);
                     if (string.IsNullOrEmpty(pathSm) || pathA != pathSm)
                     {
                         Debug.LogWarning("[AnimatorBinding] 遷移元と遷移先は同一 Animator Controller アセット上である必要があります。");
                         return;
                     }
-
-                    // グラフの空白クリックでは、現在表示中の親ステートマシンが
-                    // Selection.activeObject になることがある。その場合は遷移先選択として扱わない。
-                    var parentSm = AnimatorAnyStateGraphSelectionHelper.FindParentStateMachineForState(_from);
-                    if (parentSm == destSm)
-                        return;
 
                     if (TryShowStateMachineDestinationMenu(
                             destSm,
@@ -565,12 +640,90 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (targetStateMachine.states.Length == 0 && targetStateMachine.stateMachines.Length == 0)
                 return false;
 
-            AnimatorTransitionDestinationPickerWindow.ShowWindow(
+            _destinationPicker = AnimatorTransitionDestinationPickerWindow.ShowWindow(
                 $"遷移先を選択: {targetStateMachine.name}",
                 targetStateMachine,
                 onSelectStateMachine,
                 onSelectState);
             return true;
+        }
+
+        /// <summary>
+        /// グラフの空白クリックは、表示中のステートマシンが選択される。
+        /// それは遷移先にせず、ユーザーのクリックなら選択モードを終了する。
+        /// </summary>
+        private static bool TryConsumeBackgroundClick(AnimatorStateMachine selectedSm)
+        {
+            if (!IsBackgroundGraphSelection(selectedSm))
+                return false;
+
+            if (IsUserPointerClick())
+                Cancel();
+
+            return true;
+        }
+
+        private static bool IsBackgroundGraphSelection(AnimatorStateMachine selectedSm)
+        {
+            if (selectedSm == null)
+                return false;
+
+            if (TryGetAnimatorWindowViewedStateMachine(out var viewed) && viewed != null)
+                return ReferenceEquals(selectedSm, viewed);
+
+            if (_from != null)
+            {
+                var parent = AnimatorAnyStateGraphSelectionHelper.FindParentStateMachineForState(_from);
+                return parent != null && ReferenceEquals(parent, selectedSm);
+            }
+
+            if (_fromAnyState && _anyStateHost != null)
+                return ReferenceEquals(selectedSm, _anyStateHost);
+
+            return false;
+        }
+
+        private static bool IsUserPointerClick()
+        {
+            var e = Event.current;
+            if (e != null && e.button == 0)
+            {
+                var type = e.type == EventType.Used ? e.rawType : e.type;
+                if (type == EventType.MouseDown || type == EventType.MouseUp)
+                    return true;
+            }
+
+            return _lastLeftClickTime >= 0d &&
+                   EditorApplication.timeSinceStartup - _lastLeftClickTime <= 0.75d;
+        }
+
+        private static bool TryGetAnimatorWindowViewedStateMachine(out AnimatorStateMachine stateMachine)
+        {
+            stateMachine = null;
+            var toolType = AnimatorMakeTransitionModeInternal.GetCachedAnimatorControllerToolType();
+            if (toolType == null)
+                return false;
+
+            EditorWindow window = null;
+            foreach (var obj in Resources.FindObjectsOfTypeAll(toolType))
+            {
+                if (obj is EditorWindow ew)
+                {
+                    window = ew;
+                    break;
+                }
+            }
+
+            if (window == null)
+                return false;
+
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            var field = toolType.GetField("m_ActiveStateMachine", flags);
+            if (field == null || field.FieldType != typeof(AnimatorStateMachine))
+                return false;
+
+            stateMachine = field.GetValue(window) as AnimatorStateMachine;
+            return stateMachine != null;
         }
 
         private static void CollectNestedStates(
@@ -716,6 +869,25 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             _anyStateHost = null;
             _notificationWindow = null;
             _notificationHideAt = 0;
+            _backgroundCancelGeneration++;
+            CloseDestinationPicker();
+        }
+
+        private static void CloseDestinationPicker()
+        {
+            var picker = _destinationPicker;
+            _destinationPicker = null;
+            if (picker == null)
+                return;
+
+            try
+            {
+                picker.Close();
+            }
+            catch
+            {
+                // ignored
+            }
         }
 
         private static void TryShowNotificationOnAnimatorWindow(string message)
@@ -1159,7 +1331,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private float _zoom = 1f;
         private Object _unusedHighlight;
 
-        internal static void ShowWindow(
+        internal static AnimatorTransitionDestinationPickerWindow ShowWindow(
             string titleText,
             AnimatorStateMachine rootSm,
             Action<AnimatorStateMachine> onSelectStateMachine,
@@ -1178,6 +1350,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             win.minSize = new Vector2(480f, 400f);
             win.ShowUtility();
             win.Focus();
+            return win;
         }
 
         private void OnGUI()

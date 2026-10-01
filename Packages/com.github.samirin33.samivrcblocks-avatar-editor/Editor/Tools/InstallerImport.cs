@@ -1,6 +1,5 @@
 #if UNITY_EDITOR
 using System.IO;
-using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
@@ -18,7 +17,7 @@ namespace SamiVRCBlocksAvatar.Editor
         public const string InstallerSourceFolderName = "SamiVRCBlocksAvatarInstaller";
         public const string InstallerFolderAssetPath = "Assets/" + InstallerFolderName;
         public const string InstallerEditorScriptFileName = "SamiVRCBlocksAvatarInstallerEditor.cs";
-        public const string InstallerUnityPackageFileName = "SamiVRCBlocksInstaller.unitypackage";
+        public const string VpaiConfigFileName = "vpai-config.json";
 
         /// <summary>編集用ソース（Packages/.../Editor/SamiVRCBlocksAvatarInstaller）</summary>
         public const string InstallerSourceFolderPackageRelative =
@@ -44,10 +43,6 @@ namespace SamiVRCBlocksAvatar.Editor
             "    \"versionDefines\": [],\n" +
             "    \"noEngineReferences\": false\n" +
             "}\n";
-
-        static readonly Regex TargetAssetGuidRegex = new Regex(
-            @"(private\s+const\s+string\s+TargetAssetGUID\s*=\s*"")([0-9a-fA-F]{32})("")",
-            RegexOptions.Compiled);
 
         [MenuItem("Tools/SamiVRCBlocksAvatar/Avatar Installer/Stage To Assets")]
         private static void StageToAssetsMenu()
@@ -94,13 +89,14 @@ namespace SamiVRCBlocksAvatar.Editor
             var sourceFolder = GetInstallerSourceFolderPath();
             if (string.IsNullOrEmpty(sourceFolder) || !Directory.Exists(sourceFolder))
                 return false;
-            return File.Exists(Path.Combine(sourceFolder, InstallerEditorScriptFileName));
+            return File.Exists(Path.Combine(sourceFolder, InstallerEditorScriptFileName))
+                && File.Exists(Path.Combine(sourceFolder, VpaiConfigFileName));
         }
 
         /// <summary>
         /// Packages 上の編集用ソースを Assets/SamiVRCBlocksAvatarInstaller へコピーする（原本は Packages に残す）。
         /// 編集用 asmdef は配布に含めず、Editor 専用の配布用 asmdef を書き出す。
-        /// ステージ先 unitypackage には固有 GUID を割り当て、Installer スクリプトの TargetAssetGUID に反映する。
+        /// VPM 更新処理のソースとライセンスもサブフォルダごと含める。
         /// </summary>
         public static bool StageInstallerToAssets()
         {
@@ -119,48 +115,19 @@ namespace SamiVRCBlocksAvatar.Editor
                     return false;
                 }
 
+                if (!File.Exists(Path.Combine(sourceFolder, VpaiConfigFileName)))
+                {
+                    Debug.LogWarning($"[SamiVRCBlocksAvatar] {VpaiConfigFileName} がありません。");
+                    return false;
+                }
+
                 CleanupStagedInstaller();
                 EnsureAssetFolder(InstallerFolderAssetPath);
 
                 var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                 var destFull = Path.GetFullPath(Path.Combine(projectRoot, InstallerFolderAssetPath));
+                CopyInstallerTree(sourceFolder, destFull);
 
-                foreach (var file in Directory.GetFiles(sourceFolder, "*", SearchOption.TopDirectoryOnly))
-                {
-                    var name = Path.GetFileName(file);
-                    // 編集用 asmdef（defineConstraints 付き）は配布しない
-                    if (name.EndsWith(".asmdef", System.StringComparison.OrdinalIgnoreCase) ||
-                        name.EndsWith(".asmdef.meta", System.StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    // Packages 側 GUID 衝突を避けるため .meta はコピーしない（後で固有 GUID を割り当てる）
-                    if (name.EndsWith(".meta", System.StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    File.Copy(file, Path.Combine(destFull, name), true);
-                }
-
-                var unityPackageFullPath = Path.Combine(destFull, InstallerUnityPackageFileName);
-                if (!File.Exists(unityPackageFullPath))
-                {
-                    Debug.LogError($"[SamiVRCBlocksAvatar] {InstallerUnityPackageFileName} がステージに含まれていません。");
-                    return false;
-                }
-
-                // 仮展開先 unitypackage 専用 GUID を発行し、スクリプトの TargetAssetGUID に埋め込む
-                var stagedUnityPackageGuid = GUID.Generate().ToString();
-                WriteDefaultImporterMeta(unityPackageFullPath + ".meta", stagedUnityPackageGuid);
-
-                var stagedScriptPath = Path.Combine(destFull, InstallerEditorScriptFileName);
-                if (!PatchTargetAssetGuid(stagedScriptPath, stagedUnityPackageGuid))
-                {
-                    Debug.LogError(
-                        "[SamiVRCBlocksAvatar] ステージ先スクリプトの TargetAssetGUID 書き換えに失敗しました: " +
-                        stagedScriptPath);
-                    return false;
-                }
-
-                // インポート先で UnityEditor 参照できるよう Editor 専用 asmdef を同梱
                 File.WriteAllText(Path.Combine(destFull, DistributionAsmdefFileName), DistributionAsmdefJson);
 
                 AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
@@ -171,10 +138,7 @@ namespace SamiVRCBlocksAvatar.Editor
                     return false;
                 }
 
-                var resolved = AssetDatabase.GUIDToAssetPath(stagedUnityPackageGuid);
-                Debug.Log(
-                    $"[SamiVRCBlocksAvatar] Installer を {InstallerFolderAssetPath} へ一時配置しました。" +
-                    $" TargetAssetGUID={stagedUnityPackageGuid} → '{resolved}'");
+                Debug.Log($"[SamiVRCBlocksAvatar] Installer を {InstallerFolderAssetPath} へ一時配置しました。");
                 return true;
             }
             catch (System.Exception ex)
@@ -184,33 +148,36 @@ namespace SamiVRCBlocksAvatar.Editor
             }
         }
 
-        static bool PatchTargetAssetGuid(string scriptFullPath, string guid)
+        static void CopyInstallerTree(string sourceDir, string destDir)
         {
-            if (string.IsNullOrEmpty(scriptFullPath) || !File.Exists(scriptFullPath))
-                return false;
-            if (string.IsNullOrEmpty(guid) || guid.Length != 32)
-                return false;
+            Directory.CreateDirectory(destDir);
+            foreach (var file in Directory.GetFiles(sourceDir))
+            {
+                var name = Path.GetFileName(file);
+                if (ShouldSkipStagedFile(name))
+                    continue;
+                File.Copy(file, Path.Combine(destDir, name), true);
+            }
 
-            var source = File.ReadAllText(scriptFullPath);
-            if (!TargetAssetGuidRegex.IsMatch(source))
-                return false;
-
-            var patched = TargetAssetGuidRegex.Replace(source, "${1}" + guid + "${3}", 1);
-            File.WriteAllText(scriptFullPath, patched);
-            return true;
+            foreach (var dir in Directory.GetDirectories(sourceDir))
+            {
+                var name = Path.GetFileName(dir);
+                if (name.Equals("bin", System.StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("obj", System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+                CopyInstallerTree(dir, Path.Combine(destDir, name));
+            }
         }
 
-        static void WriteDefaultImporterMeta(string metaFullPath, string guid)
+        static bool ShouldSkipStagedFile(string name)
         {
-            var meta =
-                "fileFormatVersion: 2\n" +
-                "guid: " + guid + "\n" +
-                "DefaultImporter:\n" +
-                "  externalObjects: {}\n" +
-                "  userData: \n" +
-                "  assetBundleName: \n" +
-                "  assetBundleVariant: \n";
-            File.WriteAllText(metaFullPath, meta);
+            if (name.EndsWith(".meta", System.StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (name.EndsWith(".asmdef", System.StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (name.EndsWith(".unitypackage", System.StringComparison.OrdinalIgnoreCase))
+                return true;
+            return false;
         }
 
         /// <summary>

@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.Animations;
@@ -274,6 +274,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
             return count;
         }
+
     }
     #endif
 }

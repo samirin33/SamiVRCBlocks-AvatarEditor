@@ -36,6 +36,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         private bool _directoryScanned;
         private bool _loaded;
         private Transform _preferredRoot;
+        private bool _watchHierarchy;
 
         [MenuItem("SBAvatarEditor/Animation/Animation Clip Binding Path Replace", false, 4)]
         public static void Open()
@@ -102,6 +103,8 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                     DrawDirectory();
                 }
 
+                EditorGUILayout.Space(8);
+                DrawHierarchyWatch();
                 EditorGUILayout.Space(8);
                 DrawRules();
                 EditorGUILayout.Space(8);
@@ -178,6 +181,39 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                     _directoryClips.Add(clip);
             }
             _directoryScanned = true;
+        }
+
+        private void DrawHierarchyWatch()
+        {
+            EditorGUILayout.LabelField("ヒエラルキー監視", EditorStyles.boldLabel);
+            EditorGUI.BeginChangeCheck();
+            _watchHierarchy = EditorGUILayout.Toggle("ヒエラルキーを監視", _watchHierarchy);
+            if (EditorGUI.EndChangeCheck())
+                SavePreferences();
+
+            if (!_watchHierarchy)
+            {
+                EditorGUILayout.HelpBox("オフのときは、リネームや親子変更でバインドパスを自動更新しません。", MessageType.None);
+                return;
+            }
+
+            var watched = AnimationClipBindingPathUtility.WatchedAnimatorRoot;
+            var clips = GetTargetClips();
+            var clipCount = clips != null ? clips.Count : 0;
+            if (watched == null)
+            {
+                EditorGUILayout.HelpBox("ヒエラルキーで、親に Animator があるオブジェクトを選択してください。ウィンドウを閉じていても監視は続きます。", MessageType.Warning);
+            }
+            else if (clipCount == 0)
+            {
+                EditorGUILayout.HelpBox($"監視中: {watched.name}\n対象の Animation Clip が無いため、パスはまだ書き換えません。", MessageType.Warning);
+            }
+            else
+            {
+                EditorGUILayout.HelpBox(
+                    $"監視中: {watched.name}\n選択中オブジェクトの親 Animator 配下のリネームや親子変更に合わせて、リストの Clip に加え、同じ Animator の Clip と古いパスを持つ Clip のバインドパスを書き換えます。ウィンドウを閉じていても動作します。",
+                    MessageType.Info);
+            }
         }
 
         private void DrawRules()
@@ -304,6 +340,8 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             else if (!string.IsNullOrEmpty(_pathTo))
                 SyncObjectFromPathTo();
 
+            _watchHierarchy = AnimationClipBindingPathUtility.HierarchyWatchEnabled;
+            PushHierarchyWatch();
             _loaded = true;
         }
 
@@ -315,6 +353,12 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             EditorPrefs.SetString(PrefsKeyPathToObject, SaveTransformAsGlobalObjectId(_pathToObject));
             EditorPrefs.SetString(PrefsKeyClipGuids, SerializeClipGuids(_clipList));
             EditorPrefs.SetString(PrefsKeyDirectoryPath, GetDirectoryPath(_directoryAsset));
+            PushHierarchyWatch();
+        }
+
+        private void PushHierarchyWatch()
+        {
+            AnimationClipBindingPathUtility.ConfigureHierarchyWatch(_watchHierarchy, GetTargetClips());
         }
 
         private void RestoreClipList()

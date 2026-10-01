@@ -1,0 +1,16 @@
+VPM package check and update in this installer is based on
+VPMPackageAutoInstaller by anatawa12.
+
+https://github.com/anatawa12/VPMPackageAutoInstaller
+
+Copyright (c) 2022 anatawa12
+Licensed under the MIT License. The full text is in LICENSE next to this file.
+
+The VrcGetCs sources are the C# reimplementation of vrc-get included in that
+project (https://github.com/anatawa12/vrc-get).
+
+SimpleJson (https://github.com/anatawa12/SimpleJson) is included under
+SimpleJson/ and is MIT licensed. See SimpleJson/LICENSE.
+
+semver.net by Adam Reeve (https://github.com/adamreeve/semver.net) is included
+under semver.net/ and is MIT licensed. See semver.net/LICENSE.

@@ -118,11 +118,11 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     var doc = scroll + mouseOff;
                     var px0 = PixelsPerWorldUnitAtZoom1 * zOld;
                     var worldX = min.x + (doc.x - ScreenPad) / px0;
-                    var worldY = max.y - (doc.y - ScreenPad) / px0;
+                    var worldY = min.y + (doc.y - ScreenPad) / px0;
                     var px1 = PixelsPerWorldUnitAtZoom1 * zNew;
                     var docNew = new Vector2(
                         ScreenPad + (worldX - min.x) * px1,
-                        ScreenPad + (max.y - worldY) * px1);
+                        ScreenPad + (worldY - min.y) * px1);
                     scroll = docNew - mouseOff;
                     zoom = zNew;
                     z = zNew;
@@ -226,8 +226,9 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 }
 
                 var p = new Vector2(row.graphPosition.x, row.graphPosition.y);
+                // Animator グラフは GUI と同じく Y が下向き。上下を反転させない。
                 var lx = ScreenPad + (p.x - min.x) * pxPerUnit;
-                var ly = ScreenPad + (max.y - p.y) * pxPerUnit;
+                var ly = ScreenPad + (p.y - min.y) * pxPerUnit;
                 var rr = new Rect(lx, ly, nodeW, nodeH);
 
                 for (var k = 0; k < 12; k++)

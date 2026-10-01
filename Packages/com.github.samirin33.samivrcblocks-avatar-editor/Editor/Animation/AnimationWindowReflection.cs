@@ -249,6 +249,110 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             var field = state.GetType().GetField("m_SelectedKeysCache", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             field?.SetValue(state, null);
         }
+
+        /// <summary>
+        /// Animation ウィンドウの階層で選択中の行から、ルート相対パスを得る。
+        /// ルート自身が選ばれているときは空文字。
+        /// </summary>
+        public static bool TryGetSelectedHierarchyPath(object state, out string path)
+        {
+            path = null;
+            if (state == null)
+                return false;
+
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            object hierarchyState = state.GetType().GetProperty("hierarchyState", flags)?.GetValue(state);
+            object hierarchyData = state.GetType().GetProperty("hierarchyData", flags)?.GetValue(state);
+            if (hierarchyState == null || hierarchyData == null)
+                return false;
+
+            object selectedIds = hierarchyState.GetType().GetProperty("selectedIDs", flags)?.GetValue(hierarchyState);
+            if (!(selectedIds is IList ids) || ids.Count == 0)
+                return false;
+
+            MethodInfo findItem = null;
+            MethodInfo[] methods = hierarchyData.GetType().GetMethods(flags);
+            for (int i = 0; i < methods.Length; i++)
+            {
+                if (methods[i].Name != "FindItem")
+                    continue;
+                ParameterInfo[] parameters = methods[i].GetParameters();
+                if (parameters.Length == 1 && parameters[0].ParameterType == typeof(int))
+                {
+                    findItem = methods[i];
+                    break;
+                }
+            }
+
+            if (findItem == null)
+                return false;
+
+            for (int i = 0; i < ids.Count; i++)
+            {
+                if (!(ids[i] is int id))
+                    continue;
+
+                object item = findItem.Invoke(hierarchyData, new object[] { id });
+                if (item == null)
+                    continue;
+
+                FieldInfo pathField = item.GetType().GetField("path", flags);
+                string itemPath = pathField != null
+                    ? pathField.GetValue(item) as string
+                    : item.GetType().GetProperty("path", flags)?.GetValue(item) as string;
+                if (itemPath == null)
+                    continue;
+
+                path = itemPath;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Animation ウィンドウのプレビューと再生を止める。
+        /// </summary>
+        public static void StopAnimationWindowPreview()
+        {
+            EditorWindow window = GetAnimationWindow();
+            if (window == null)
+                return;
+
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            Type type = window.GetType();
+            TrySetBool(window, type, "playing", false, flags);
+            TrySetBool(window, type, "previewing", false, flags);
+            if (!AnimationMode.InAnimationMode())
+                return;
+
+            if (!TryGetAnimationWindowState(out object state) || state == null)
+                return;
+
+            Type stateType = state.GetType();
+            TrySetBool(state, stateType, "playing", false, flags);
+            TrySetBool(state, stateType, "previewing", false, flags);
+            if (!AnimationMode.InAnimationMode())
+                return;
+
+            TrySetBool(state, stateType, "recording", false, flags);
+            TrySetBool(state, stateType, "previewing", false, flags);
+        }
+
+        private static void TrySetBool(object target, Type type, string name, bool value, BindingFlags flags)
+        {
+            PropertyInfo property = type.GetProperty(name, flags);
+            if (property == null || property.PropertyType != typeof(bool) || !property.CanWrite)
+                return;
+
+            try
+            {
+                property.SetValue(target, value, null);
+            }
+            catch (Exception)
+            {
+            }
+        }
     }
 }
 #endif

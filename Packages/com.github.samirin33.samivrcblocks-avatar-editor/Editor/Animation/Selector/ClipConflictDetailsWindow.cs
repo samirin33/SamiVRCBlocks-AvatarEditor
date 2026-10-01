@@ -72,14 +72,17 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         private void RefreshConflictEntries()
         {
             AnimationClipSelectorStateManager.RequestSave();
-            if (_clip == null || _root == null) return;
-            var entries = AnimationClipSelector.GetConflictEntriesForClip(_clip, _root);
-            _entries = entries != null ? new List<ConflictEntry>(entries) : new List<ConflictEntry>();
-            Repaint();
+            RebuildConflictEntries();
+            AnimationClipSelector.RefreshOpenMissingBindingWindows();
         }
 
         /// <summary>Preferences から無視を戻したときなど、ウィンドウ外から一覧を更新する。</summary>
         internal void RefreshConflictEntriesFromOutside()
+        {
+            RebuildConflictEntries();
+        }
+
+        private void RebuildConflictEntries()
         {
             if (_clip == null || _root == null) return;
             var entries = AnimationClipSelector.GetConflictEntriesForClip(_clip, _root);

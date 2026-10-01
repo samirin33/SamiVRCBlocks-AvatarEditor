@@ -9,7 +9,7 @@
 | カテゴリ | 項目 |
 |----------|------|
 | **File** | Package Exporter / VN3 License Generator |
-| **Animation** | Animation Clip Selector / AnimatorStateController / Animation Clip Binding Path Replace / Animator Controller Clip Replace |
+| **Animation** | Animation Clip Selector / AnimatorStateController / Animation Clip Binding Path Replace / Animator Controller Clip Replace / Transform Wiggle Squish / Loop Key |
 | **Parameter** | VRChat Avatar Param Setter / VRChat FaceTracking Param Setter |
 | **Performance** | FPS Limiter / Image Compressor / Item Analyzer |
 | **Settings** | Animator Default Setting / Animator Binding |
@@ -31,3 +31,6 @@
 | 11 | [11-animator-state-controller.md](features/11-animator-state-controller.md) | AnimatorStateController |
 | 12 | [12-image-compressor.md](features/12-image-compressor.md) | Image Compressor |
 | 13 | [13-item-analyzer.md](features/13-item-analyzer.md) | Item Analyzer |
+| 14 | [14-menu-rich-text-editor.md](features/14-menu-rich-text-editor.md) | Menu Rich Text Editor |
+| 15 | [15-transform-wiggle-squish.md](features/15-transform-wiggle-squish.md) | Transform Wiggle / Squish |
+| 16 | [16-loop-key.md](features/16-loop-key.md) | ループキー |

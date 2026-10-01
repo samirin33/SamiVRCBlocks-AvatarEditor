@@ -1,0 +1,10 @@
+{
+  "vpmDependencies": {
+    "com.github.samirin33.samivrcblocks-avatar": "x.x.x"
+  },
+  "vpmRepositories": [
+    "https://samirin33.github.io/Samirin33VPM/vpm.json",
+    "https://vpm.anatawa12.com/vpm.json",
+    "https://vpm.nadena.dev/vpm.json"
+  ]
+}

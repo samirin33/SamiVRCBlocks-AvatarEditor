@@ -200,6 +200,8 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                     return;
                 }
 
+                // バインドパスは Animator の GameObject 基準のため、選択中の子/親オブジェクトではなく Animator 側に揃える
+                activeRoot = animator.gameObject;
                 _lastActiveRoot = activeRoot;
 
                 _clips = GetAllAnimationClips(animator.runtimeAnimatorController);
@@ -703,6 +705,19 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         internal static void InvalidateAndRepaint()
         {
             InvalidatePathConflictCache();
+            RefreshOpenConflictDetailsWindows();
+            RefreshOpenMissingBindingWindows();
+        }
+
+        /// <summary>開いている Missing 詳細ウィンドウの一覧を、現在のバインドパスで作り直す。</summary>
+        internal static void RefreshOpenMissingBindingWindows()
+        {
+            var windows = Resources.FindObjectsOfTypeAll<ClipMissingBindingDetailsWindow>();
+            for (int i = 0; i < windows.Length; i++)
+            {
+                if (windows[i] == null) continue;
+                windows[i].RefreshMissingPathsFromOutside();
+            }
         }
 
         /// <summary>指定クリップの競合エントリ一覧を取得。root から Controller を解決してキャッシュを構築する。Undo 後の詳細ウィンドウ更新用。</summary>

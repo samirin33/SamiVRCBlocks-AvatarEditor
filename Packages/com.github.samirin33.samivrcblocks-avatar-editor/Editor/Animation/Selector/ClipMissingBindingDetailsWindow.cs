@@ -39,29 +39,64 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             window.Focus();
         }
 
+        private bool _missingRefreshQueued;
+
         private void OnEnable()
         {
             Undo.undoRedoPerformed += RefreshMissingPaths;
+            EditorApplication.hierarchyChanged += OnHierarchyChanged;
         }
 
         private void OnDisable()
         {
             Undo.undoRedoPerformed -= RefreshMissingPaths;
+            EditorApplication.hierarchyChanged -= OnHierarchyChanged;
+        }
+
+        private void OnHierarchyChanged()
+        {
+            if (_missingRefreshQueued)
+                return;
+
+            _missingRefreshQueued = true;
+            EditorApplication.delayCall += () =>
+            {
+                _missingRefreshQueued = false;
+                if (this == null)
+                    return;
+                RefreshMissingPathsFromOutside();
+            };
         }
 
         private void RefreshMissingPaths()
         {
+            RebuildMissingPaths();
+            AnimationClipSelector.InvalidatePathConflictCache();
+        }
+
+        /// <summary>パス置換やヒエラルキー変更のあと、ウィンドウ外から Missing 一覧を更新する。</summary>
+        internal void RefreshMissingPathsFromOutside()
+        {
+            RebuildMissingPaths();
+        }
+
+        private void RebuildMissingPaths()
+        {
             if (_clip == null || _root == null)
             {
                 _missingPaths.Clear();
+                Repaint();
                 return;
             }
 
+            var scope = _controllerClips != null && _controllerClips.Count > 0
+                ? _controllerClips
+                : new List<AnimationClip> { _clip };
+            AnimationClipBindingPathUtility.ReplaceMissingBindingsByRememberedObject(_root.transform, scope);
             _missingPaths = AnimationClipBindingPathUtility
                 .GetMissingBindingPaths(_root.transform, _clip)
                 .ToList();
             Repaint();
-            AnimationClipSelector.InvalidateAndRepaint();
         }
 
         private List<AnimationClip> GetClipsWithMissingPath(string path)
