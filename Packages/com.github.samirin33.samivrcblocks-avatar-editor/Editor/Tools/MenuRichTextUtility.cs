@@ -231,6 +231,11 @@ namespace SamiVRCBlocksAvatar.Editor
                 return unwrapped;
             }
 
+            // タグ記号を含んだ選択でも、内容がそのタグに収まっていれば解除する
+            if (TryParseTagNameFromOpen(open, out var tagName) &&
+                TryFindWrappingTag(text, start, end, tagName, out _, out _, out _, out _))
+                return UnwrapTag(text, start, end, tagName, out newStart, out newEnd);
+
             if (start == end)
             {
                 var inserted = text.Insert(start, open + close);
@@ -360,7 +365,6 @@ namespace SamiVRCBlocksAvatar.Editor
 
         public static string WrapSizePercent(string text, int selA, int selB, int percent, out int newStart, out int newEnd)
         {
-            percent = Mathf.Clamp(percent, 1, 300);
             return ReplaceOrWrapTag(text, selA, selB, "size", "<size=" + percent + "%>", "</size>", out newStart, out newEnd);
         }
 
@@ -411,7 +415,6 @@ namespace SamiVRCBlocksAvatar.Editor
             };
             text = text ?? "";
             GetSelectionRange(text, selA, selB, out var start, out var end);
-            SnapSelectionToContent(text, ref start, ref end);
             if (start >= end)
                 return state;
 
@@ -500,7 +503,7 @@ namespace SamiVRCBlocksAvatar.Editor
             if (!float.TryParse(raw, System.Globalization.NumberStyles.Float,
                     System.Globalization.CultureInfo.InvariantCulture, out var v))
                 return false;
-            percent = Mathf.Clamp(Mathf.RoundToInt(v), 1, 300);
+            percent = Mathf.RoundToInt(v);
             return true;
         }
 
@@ -900,29 +903,110 @@ namespace SamiVRCBlocksAvatar.Editor
             return false;
         }
 
+        /// <summary>
+        /// 選択がタグに収まっているかを見ます。
+        /// タグ全体を選んでいる場合や、選択の端が開閉タグの途中でも、
+        /// 選ばれた本文がすべてそのタグの内側なら一致します。入れ子は最も内側を返します。
+        /// </summary>
         static bool TryFindWrappingTag(string text, int start, int end, string tagName, out int openStart, out int openEnd, out int closeStart, out int closeEnd)
         {
             openStart = openEnd = closeStart = closeEnd = -1;
-            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(tagName) || start > end)
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(tagName))
                 return false;
 
-            // 選択が開タグから始まる場合
-            if (start < end && start < text.Length && text[start] == '<' &&
-                TryParseNamedOpenTagAt(text, start, tagName, out openStart, out openEnd) &&
-                TryFindMatchingCloseTag(text, openEnd, tagName, out closeStart, out closeEnd))
+            GetSelectionRange(text, start, end, out start, out end);
+            if (start >= end)
+                return false;
+
+            var bestLen = int.MaxValue;
+            var found = false;
+            var i = 0;
+            while (i < text.Length)
             {
-                if (end == closeEnd || end == closeStart)
-                    return true;
+                if (text[i] != '<')
+                {
+                    i++;
+                    continue;
+                }
+
+                if (!TryParseNamedOpenTagAt(text, i, tagName, out var oStart, out var oEnd) ||
+                    !TryFindMatchingCloseTag(text, oEnd, tagName, out var cStart, out var cEnd))
+                {
+                    var gt = text.IndexOf('>', i);
+                    i = gt < 0 ? text.Length : gt + 1;
+                    continue;
+                }
+
+                if (SelectionIsCoveredByTag(text, start, end, oStart, oEnd, cStart, cEnd))
+                {
+                    var len = cEnd - oStart;
+                    if (len < bestLen)
+                    {
+                        bestLen = len;
+                        openStart = oStart;
+                        openEnd = oEnd;
+                        closeStart = cStart;
+                        closeEnd = cEnd;
+                        found = true;
+                    }
+                }
+
+                i = oEnd;
             }
 
-            // 選択がタグ内側（直前が '>'、直後が閉じタグ）
-            if (start > 0 && text[start - 1] == '>' &&
-                TryFindOpenTagBefore(text, start, tagName, out openStart, out openEnd) &&
-                TryFindMatchingCloseTag(text, openEnd, tagName, out closeStart, out closeEnd) &&
-                closeStart == end)
+            return found;
+        }
+
+        /// <summary>
+        /// 選択範囲の本文がすべてタグ内容に入り、かつタグ（記号を含む）と重なっている。
+        /// </summary>
+        static bool SelectionIsCoveredByTag(string text, int start, int end, int openStart, int openEnd, int closeStart, int closeEnd)
+        {
+            if (end <= openStart || start >= closeEnd)
+                return false;
+
+            var hasContent = false;
+            for (var i = start; i < end; i++)
+            {
+                if (IsTagMarkupIndex(text, i))
+                    continue;
+                hasContent = true;
+                if (i < openEnd || i >= closeStart)
+                    return false;
+            }
+
+            if (hasContent)
                 return true;
 
-            return false;
+            return RangesOverlap(start, end, openStart, openEnd) || RangesOverlap(start, end, closeStart, closeEnd);
+        }
+
+        static bool RangesOverlap(int a0, int a1, int b0, int b1)
+        {
+            return a1 > b0 && a0 < b1;
+        }
+
+        static bool IsTagMarkupIndex(string text, int index)
+        {
+            if (index < 0 || index >= text.Length)
+                return false;
+            var lt = text.LastIndexOf('<', index);
+            if (lt < 0)
+                return false;
+            var gt = text.IndexOf('>', lt);
+            return gt >= index;
+        }
+
+        static bool TryParseTagNameFromOpen(string open, out string tagName)
+        {
+            tagName = null;
+            if (string.IsNullOrEmpty(open) || open[0] != '<')
+                return false;
+            var end = open.IndexOfAny(new[] { ' ', '=', '>', '\t', '#' }, 1);
+            if (end <= 1)
+                return false;
+            tagName = open.Substring(1, end - 1);
+            return tagName.Length > 0 && tagName[0] != '/';
         }
 
         static bool TryParseNamedOpenTagAt(string text, int index, string tagName, out int openStart, out int openEnd)
@@ -936,17 +1020,6 @@ namespace SamiVRCBlocksAvatar.Editor
             openStart = index;
             openEnd = gt + 1;
             return true;
-        }
-
-        static bool TryFindOpenTagBefore(string text, int contentStart, string tagName, out int openStart, out int openEnd)
-        {
-            openStart = openEnd = -1;
-            if (contentStart <= 0 || contentStart > text.Length || text[contentStart - 1] != '>')
-                return false;
-            var lt = text.LastIndexOf('<', contentStart - 2);
-            if (lt < 0)
-                return false;
-            return TryParseNamedOpenTagAt(text, lt, tagName, out openStart, out openEnd) && openEnd == contentStart;
         }
 
         static bool TryFindMatchingCloseTag(string text, int searchFrom, string tagName, out int closeStart, out int closeEnd)

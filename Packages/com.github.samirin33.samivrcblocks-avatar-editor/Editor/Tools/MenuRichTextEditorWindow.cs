@@ -80,6 +80,8 @@ namespace SamiVRCBlocksAvatar.Editor
         int _selEnd;
         int _keptStart;
         int _keptEnd;
+        int _inspectStart;
+        int _inspectEnd;
         Color _editColor = Color.white;
         string _hex = "FFFFFF";
         Color _markColor = new Color(1f, 0.878f, 0.4f, 1f);
@@ -97,6 +99,8 @@ namespace SamiVRCBlocksAvatar.Editor
 
         TextField _bodyField;
         VisualElement _leftPane;
+        VisualElement _radialHost;
+        IMGUIContainer _flatPreviewGui;
         IMGUIContainer _listGui;
         IMGUIContainer _formatGui;
         IMGUIContainer _statusGui;
@@ -109,6 +113,7 @@ namespace SamiVRCBlocksAvatar.Editor
         bool _pendingVOffsetApply;
         bool _pendingColorApply;
         bool _pendingMarkApply;
+        bool _previewRefreshQueued;
 
         [MenuItem(MenuPath, false, 8)]
         public static void Open()
@@ -225,7 +230,7 @@ namespace SamiVRCBlocksAvatar.Editor
             rightScroll.style.minWidth = 320f;
             row.Add(rightScroll);
 
-            rightScroll.Add(CreateImguiPanel(DrawPreviewPanel));
+            rightScroll.Add(CreatePreviewSection());
             rightScroll.Add(CreateBodyPanel());
 
             _formatGui = CreateImguiPanel(DrawFormatPanel);
@@ -233,6 +238,36 @@ namespace SamiVRCBlocksAvatar.Editor
 
             _statusGui = CreateImguiPanel(DrawStatus);
             root.Add(_statusGui);
+            RefreshPreview();
+        }
+
+        VisualElement CreatePreviewSection()
+        {
+            var section = new VisualElement();
+            section.style.flexShrink = 0f;
+            section.style.position = Position.Relative;
+            section.Add(CreateImguiPanel(DrawPreviewHeader));
+            _radialHost = new VisualElement();
+            _radialHost.style.flexShrink = 0f;
+            section.Add(_radialHost);
+            _flatPreviewGui = CreateImguiPanel(DrawFlatPreview);
+            section.Add(_flatPreviewGui);
+            section.Add(CreatePreviewDisclaimer());
+            return section;
+        }
+
+        static VisualElement CreatePreviewDisclaimer()
+        {
+            var note = new Label("プレビューはVRChatの実際の見た目と異なる場合があります。");
+            note.pickingMode = PickingMode.Ignore;
+            note.style.position = Position.Absolute;
+            note.style.right = 6f;
+            note.style.bottom = 2f;
+            note.style.fontSize = 10f;
+            note.style.unityTextAlign = TextAnchor.MiddleRight;
+            note.style.color = new Color(1f, 1f, 1f, 0.55f);
+            note.style.whiteSpace = WhiteSpace.Normal;
+            return note;
         }
 
         static IMGUIContainer CreateImguiPanel(Action onGui)
@@ -364,7 +399,14 @@ namespace SamiVRCBlocksAvatar.Editor
 
             var text = _bodyField.value ?? "";
             MenuRichTextFieldCompat.GetSelection(_bodyField, out var cursor, out var select);
-            MenuRichTextUtility.GetSelectionRange(text, cursor, select, out var start, out var end);
+            MenuRichTextUtility.GetSelectionRange(text, cursor, select, out var rawStart, out var rawEnd);
+            if (rawStart < rawEnd)
+            {
+                _inspectStart = rawStart;
+                _inspectEnd = rawEnd;
+            }
+
+            MenuRichTextUtility.GetSelectionRange(text, rawStart, rawEnd, out var start, out var end);
             MenuRichTextUtility.SnapSelectionToContent(text, ref start, ref end);
 
             // 範囲があるときだけ保持を更新する。空選択で消さない（書式欄入力中のため）
@@ -381,6 +423,30 @@ namespace SamiVRCBlocksAvatar.Editor
             _selEnd = end;
             _syncedSelStart = -1;
             _formatGui?.MarkDirtyRepaint();
+        }
+
+        /// <summary>
+        /// 書式の有無を見る選択範囲。タグ記号を含んだまま渡す（適用時のスナップとは分ける）。
+        /// </summary>
+        bool TryGetInspectionSelection(out int start, out int end)
+        {
+            var text = _text ?? "";
+            if (_bodyField != null)
+            {
+                MenuRichTextFieldCompat.GetSelection(_bodyField, out var cursor, out var select);
+                MenuRichTextUtility.GetSelectionRange(text, cursor, select, out var a, out var b);
+                if (a < b)
+                {
+                    _inspectStart = a;
+                    _inspectEnd = b;
+                    start = a;
+                    end = b;
+                    return true;
+                }
+            }
+
+            MenuRichTextUtility.GetSelectionRange(text, _inspectStart, _inspectEnd, out start, out end);
+            return start < end;
         }
 
         /// <summary>
@@ -425,6 +491,8 @@ namespace SamiVRCBlocksAvatar.Editor
             // 入力で選択は置き換わるので、保持していた範囲は破棄する
             _keptStart = 0;
             _keptEnd = 0;
+            _inspectStart = 0;
+            _inspectEnd = 0;
             MenuRichTextFieldCompat.GetSelection(_bodyField, out var cursor, out var select);
             SetText(e.newValue, cursor, select, fromField: true);
         }
@@ -540,6 +608,8 @@ namespace SamiVRCBlocksAvatar.Editor
             _selEnd = 0;
             _keptStart = 0;
             _keptEnd = 0;
+            _inspectStart = 0;
+            _inspectEnd = 0;
             _syncedSelStart = -1;
             SyncDraftUndoStateWithoutRecord();
             _dirty = false;
@@ -553,6 +623,7 @@ namespace SamiVRCBlocksAvatar.Editor
                 SetStatus("編集対象がありません。", MessageType.Warning);
             else
                 SetStatus($"編集中: {t.KindLabel}  {t.OwnerPath}", MessageType.Info);
+            RefreshPreview();
         }
 
         // ---------------------------------------------------------------- Undo
@@ -625,6 +696,7 @@ namespace SamiVRCBlocksAvatar.Editor
             }
 
             ApplyTextToField(_text, selStart, selEnd, focus: false);
+            RefreshPreview();
             SetStatus("Undo / Redo を反映しました。", MessageType.Info);
             Repaint();
         }
@@ -758,7 +830,7 @@ namespace SamiVRCBlocksAvatar.Editor
                    || (t.RawText != null && t.RawText.IndexOf(f, StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
-        void DrawPreviewPanel()
+        void DrawPreviewHeader()
         {
             EnsureStyles();
             EditorGUILayout.BeginVertical(_panelStyle, GUILayout.ExpandWidth(true));
@@ -771,16 +843,26 @@ namespace SamiVRCBlocksAvatar.Editor
             {
                 _previewBg.a = 1f;
                 EditorPrefs.SetString(PrefsBg, MenuRichTextUtility.ToHtmlRgb(_previewBg));
+                RefreshPreview();
             }
 
             if (GUILayout.Button("背景色リセット", GUILayout.Width(88)))
             {
                 _previewBg = VrcMenuBackground;
                 EditorPrefs.SetString(PrefsBg, MenuRichTextUtility.ToHtmlRgb(_previewBg));
+                RefreshPreview();
             }
 
             EditorGUILayout.EndHorizontal();
+            EditorGUILayout.EndVertical();
+        }
 
+        void DrawFlatPreview()
+        {
+            if (MenuRichTextRadialPreview.IsAvailable)
+                return;
+
+            EnsureStyles();
             var visualRect = GUILayoutUtility.GetRect(16f, PreviewHeightFixed, GUILayout.ExpandWidth(true), GUILayout.Height(PreviewHeightFixed));
             if (Event.current.type == EventType.Repaint)
             {
@@ -792,7 +874,36 @@ namespace SamiVRCBlocksAvatar.Editor
 
             if (_preview != null && !string.IsNullOrEmpty(_preview.StatusMessage))
                 EditorGUILayout.LabelField(_preview.StatusMessage, EditorStyles.miniLabel);
-            EditorGUILayout.EndVertical();
+        }
+
+        void RefreshPreview()
+        {
+            if (_radialHost == null || _previewRefreshQueued)
+                return;
+            _previewRefreshQueued = true;
+            _radialHost.schedule.Execute(RebuildPreview);
+        }
+
+        void RebuildPreview()
+        {
+            _previewRefreshQueued = false;
+            if (_radialHost == null)
+                return;
+
+            _radialHost.Clear();
+            var radial = MenuRichTextRadialPreview.Build(CurrentTarget(), _text, _sourceObject, _previewBg);
+            if (radial == null)
+            {
+                _radialHost.style.display = DisplayStyle.None;
+                if (_flatPreviewGui != null)
+                    _flatPreviewGui.style.display = DisplayStyle.Flex;
+                return;
+            }
+
+            _radialHost.style.display = DisplayStyle.Flex;
+            if (_flatPreviewGui != null)
+                _flatPreviewGui.style.display = DisplayStyle.None;
+            _radialHost.Add(radial);
         }
 
         void DrawBodyHeader()
@@ -982,7 +1093,7 @@ namespace SamiVRCBlocksAvatar.Editor
 
             EditorGUILayout.BeginHorizontal();
             EditorGUI.BeginChangeCheck();
-            _sizePercent = EditorGUILayout.IntSlider("サイズ %", _sizePercent, 20, 200);
+            _sizePercent = DrawUnclampedIntSlider("サイズ %", _sizePercent, 20, 200);
             if (EditorGUI.EndChangeCheck())
             {
                 EditorPrefs.SetInt(PrefsSize, _sizePercent);
@@ -1021,7 +1132,7 @@ namespace SamiVRCBlocksAvatar.Editor
 
             EditorGUILayout.BeginHorizontal();
             EditorGUI.BeginChangeCheck();
-            _vOffsetEm = EditorGUILayout.Slider("voffset (em)", _vOffsetEm, -1.5f, 1.5f);
+            _vOffsetEm = DrawUnclampedSlider("voffset (em)", _vOffsetEm, -1.5f, 1.5f);
             if (EditorGUI.EndChangeCheck())
             {
                 EditorPrefs.SetFloat(PrefsVOffset, _vOffsetEm);
@@ -1045,6 +1156,65 @@ namespace SamiVRCBlocksAvatar.Editor
             EditorGUILayout.EndHorizontal();
 
             FlushPendingFormatApplies();
+        }
+
+        /// <summary>
+        /// スライダーは範囲内だけ動かし、右の数値欄は範囲外もそのまま受け付ける。
+        /// </summary>
+        static float DrawUnclampedSlider(string label, float value, float min, float max)
+        {
+            var rect = EditorGUILayout.GetControlRect(true, EditorGUIUtility.singleLineHeight);
+            rect = EditorGUI.PrefixLabel(rect, new GUIContent(label));
+            var fieldWidth = EditorGUIUtility.fieldWidth;
+            const float gap = 5f;
+            var sliderRect = new Rect(rect.x, rect.y, Mathf.Max(0f, rect.width - fieldWidth - gap), rect.height);
+            var fieldRect = new Rect(rect.xMax - fieldWidth, rect.y, fieldWidth, rect.height);
+
+            var shown = Mathf.Clamp(value, min, max);
+            EditorGUI.BeginChangeCheck();
+            var slid = GUI.HorizontalSlider(sliderRect, shown, min, max);
+            var sliderChanged = EditorGUI.EndChangeCheck();
+
+            EditorGUI.BeginChangeCheck();
+            var typed = EditorGUI.FloatField(fieldRect, value);
+            var fieldChanged = EditorGUI.EndChangeCheck();
+
+            if (fieldChanged)
+                value = typed;
+            else if (sliderChanged)
+                value = slid;
+
+            if (fieldChanged || sliderChanged)
+                GUI.changed = true;
+            return value;
+        }
+
+        static int DrawUnclampedIntSlider(string label, int value, int min, int max)
+        {
+            var rect = EditorGUILayout.GetControlRect(true, EditorGUIUtility.singleLineHeight);
+            rect = EditorGUI.PrefixLabel(rect, new GUIContent(label));
+            var fieldWidth = EditorGUIUtility.fieldWidth;
+            const float gap = 5f;
+            var sliderRect = new Rect(rect.x, rect.y, Mathf.Max(0f, rect.width - fieldWidth - gap), rect.height);
+            var fieldRect = new Rect(rect.xMax - fieldWidth, rect.y, fieldWidth, rect.height);
+
+            var shown = Mathf.Clamp(value, min, max);
+            EditorGUI.BeginChangeCheck();
+            var slid = GUI.HorizontalSlider(sliderRect, shown, min, max);
+            var sliderChanged = EditorGUI.EndChangeCheck();
+
+            EditorGUI.BeginChangeCheck();
+            var typed = EditorGUI.IntField(fieldRect, value);
+            var fieldChanged = EditorGUI.EndChangeCheck();
+
+            if (fieldChanged)
+                value = typed;
+            else if (sliderChanged)
+                value = Mathf.RoundToInt(slid);
+
+            if (fieldChanged || sliderChanged)
+                GUI.changed = true;
+            return value;
         }
 
         /// <summary>
@@ -1097,7 +1267,7 @@ namespace SamiVRCBlocksAvatar.Editor
 
         void SyncFormatUiFromSelection()
         {
-            if (!TryGetSelection(out var selA, out var selB))
+            if (!TryGetInspectionSelection(out var selA, out var selB))
             {
                 _selectionFormat = default;
                 _syncedSelStart = -1;
@@ -1457,6 +1627,7 @@ namespace SamiVRCBlocksAvatar.Editor
             if (!_suppressUndo)
                 Undo.CollapseUndoOperations(group);
 
+            RefreshPreview();
             Repaint();
         }
 

@@ -149,7 +149,7 @@ namespace SamiVRCBlocksAvatar.Editor
             _tmp.fontSize = 8f;
             _tmp.enableAutoSizing = true;
             _tmp.fontSizeMin = 2f;
-            _tmp.fontSizeMax = 12f;
+            _tmp.fontSizeMax = 11f;
             _tmp.enableWordWrapping = true;
             _tmp.overflowMode = TextOverflowModes.Overflow;
             _tmp.richText = true;
