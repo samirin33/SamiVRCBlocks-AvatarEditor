@@ -107,36 +107,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     if (e.type == EventType.MouseDown && e.button == 0 && rowSelectableRect.Contains(e.mousePosition) &&
                         !clickedOnInteractiveControl)
                     {
-                        var addToSelection = e.control || e.command;
-                        if (addToSelection)
-                        {
-                            if (_selectionBucket != bucket)
-                            {
-                                _selectionBucket = bucket;
-                                _selectedRowIndices.Clear();
-                            }
-
-                            if (!_selectedRowIndices.Add(index))
-                                _selectedRowIndices.Remove(index);
-                        }
-                        else
-                        {
-                            _selectionBucket = bucket;
-                            _selectedRowIndices.Clear();
-                            _selectedRowIndices.Add(index);
-                        }
-
-                        if (isOutgoingBucket)
-                        {
-                            if (_reorderIncoming != null)
-                                _reorderIncoming.index = -1;
-                        }
-                        else if (_reorderOutgoing != null)
-                        {
-                            _reorderOutgoing.index = -1;
-                        }
-
-                        _lastConditionBufferSignature = "";
+                        HandleTransitionRowClicked(bucket, index, isOutgoingBucket, e.control || e.command);
                         e.Use();
                         Repaint();
                     }
@@ -189,12 +160,68 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             reorderable.onReorderCallbackWithDetails = (_, oldIndex, newIndex) =>
             {
                 if (oldIndex == newIndex) return;
+                if (IsTransitionTextInputActive())
+                    CommitActiveTextFieldAndClearFocus();
                 _selectedRowIndices.Clear();
                 _selectionBucket = FocusedListBucket.None;
                 _lastConditionBufferSignature = "";
                 ApplyOrder(rows);
                 Repaint();
             };
+        }
+
+        /// <summary>
+        /// 一覧の行クリック。テキスト入力中に別トランジションへ移る場合は、今のフィールドを描いて確定してから選択する。
+        /// </summary>
+        private void HandleTransitionRowClicked(FocusedListBucket bucket, int index, bool isOutgoingBucket, bool addToSelection)
+        {
+            var nextIndices = new HashSet<int>();
+            if (addToSelection)
+            {
+                if (_selectionBucket == bucket)
+                {
+                    foreach (var selectedIndex in _selectedRowIndices)
+                        nextIndices.Add(selectedIndex);
+                }
+
+                if (!nextIndices.Add(index))
+                    nextIndices.Remove(index);
+            }
+            else
+            {
+                nextIndices.Add(index);
+            }
+
+            var currentSig = BuildSelectionSignature(GetTransitionRowsForSettingsPanel());
+            var nextSig = BuildBucketSelectionSignature(bucket, nextIndices);
+            if (IsTransitionTextInputActive() && currentSig != nextSig)
+            {
+                _pendingTransitionSelectionActive = true;
+                _pendingSelectionBucket = bucket;
+                _pendingSelectionIsOutgoing = isOutgoingBucket;
+                _pendingSelectedRowIndices.Clear();
+                foreach (var selectedIndex in nextIndices.OrderBy(i => i))
+                    _pendingSelectedRowIndices.Add(selectedIndex);
+                return;
+            }
+
+            _selectionBucket = bucket;
+            _selectedRowIndices.Clear();
+            foreach (var selectedIndex in nextIndices)
+                _selectedRowIndices.Add(selectedIndex);
+
+            if (isOutgoingBucket)
+            {
+                if (_reorderIncoming != null)
+                    _reorderIncoming.index = -1;
+            }
+            else if (_reorderOutgoing != null)
+            {
+                _reorderOutgoing.index = -1;
+            }
+
+            if (currentSig != nextSig)
+                _lastConditionBufferSignature = "";
         }
 
         /// <summary>

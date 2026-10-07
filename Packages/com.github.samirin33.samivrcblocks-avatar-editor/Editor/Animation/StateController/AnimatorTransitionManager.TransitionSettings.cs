@@ -38,6 +38,10 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             var sig = BuildSelectionSignature(rows);
             if (sig != _lastConditionBufferSignature)
             {
+                // バインド先が変わったフレームでは、編集中テキストを移動先へ書かない。
+                // クリック由来の切り替えはフィールド描画後に確定してから次 Layout でバインドする。
+                if (IsTransitionTextInputActive())
+                    CommitActiveTextFieldAndClearFocus();
                 _lastConditionBufferSignature = sig;
                 SyncConditionBufferFromTransition(rows[0].transition);
             }
@@ -240,6 +244,80 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (rows == null || rows.Count == 0)
                 return "";
             return string.Join("|", rows.Select(r => r.transition != null ? r.transition.GetInstanceID() : 0));
+        }
+
+        private string BuildBucketSelectionSignature(FocusedListBucket bucket, IEnumerable<int> indices)
+        {
+            if (bucket == FocusedListBucket.None || indices == null)
+                return "";
+
+            var list = bucket == FocusedListBucket.Outgoing ? _outgoing : _incoming;
+            var rows = new List<TransitionRow>();
+            foreach (var idx in indices.OrderBy(i => i))
+            {
+                if (idx >= 0 && idx < list.Count)
+                    rows.Add(list[idx]);
+            }
+
+            return BuildSelectionSignature(rows);
+        }
+
+        private static bool IsTransitionTextInputActive()
+        {
+            return EditorGUIUtility.editingTextField;
+        }
+
+        /// <summary>
+        /// 編集中テキストのフォーカスを外す。値の書き戻しは、フォーカスを外す前にフィールドを描画した側で行う。
+        /// </summary>
+        private static void CommitActiveTextFieldAndClearFocus()
+        {
+            if (!EditorGUIUtility.editingTextField && GUIUtility.keyboardControl == 0)
+                return;
+
+            EditorGUIUtility.editingTextField = false;
+            GUI.FocusControl(null);
+            GUIUtility.keyboardControl = 0;
+        }
+
+        /// <summary>
+        /// テキスト確定用に遅延した行選択を、コントロール数が揃う Layout で反映する。
+        /// </summary>
+        private void ApplyPendingTransitionRowSelectionOnLayout()
+        {
+            if (!_pendingTransitionSelectionActive || Event.current.type != EventType.Layout)
+                return;
+
+            _pendingTransitionSelectionActive = false;
+            CommitActiveTextFieldAndClearFocus();
+
+            _selectionBucket = _pendingSelectionBucket;
+            _selectedRowIndices.Clear();
+            foreach (var index in _pendingSelectedRowIndices)
+                _selectedRowIndices.Add(index);
+
+            if (_pendingSelectionIsOutgoing)
+            {
+                if (_reorderIncoming != null)
+                    _reorderIncoming.index = -1;
+            }
+            else if (_reorderOutgoing != null)
+            {
+                _reorderOutgoing.index = -1;
+            }
+
+            _lastConditionBufferSignature = "";
+        }
+
+        /// <summary>
+        /// 遅延選択のクリック／再描画では、いまのトランジション向けフィールドを描いたあとでフォーカスを外す。
+        /// </summary>
+        private void ReleasePendingTransitionTextFocus()
+        {
+            if (!_pendingTransitionSelectionActive || Event.current.type == EventType.Layout)
+                return;
+
+            CommitActiveTextFieldAndClearFocus();
         }
 
         private void SyncConditionBufferFromTransition(AnimatorTransitionBase t)

@@ -20,10 +20,13 @@ namespace SamiVRCBlocksAvatar.Editor
             "SamiVRCBlocksAvatar.PackageExporter.ResetExistingAssetsOnImport";
         const string EditorPrefsKeyUseVersionFolder = "SamiVRCBlocksAvatar.PackageExporter.UseVersionFolder";
         const string EditorPrefsKeyCreateZip = "SamiVRCBlocksAvatar.PackageExporter.CreateZip";
+        const string EditorPrefsKeyExportPresetHistory = "SamiVRCBlocksAvatar.PackageExporter.ExportPresetHistory";
+        const int MaxExportPresetHistory = 8;
 
         string _sourceFolderPath = "";
         DefaultAsset _sourceFolderAsset;
         readonly List<string> _sourceFolderHistory = new List<string>();
+        readonly List<ExportPreset> _exportPresetHistory = new List<ExportPreset>();
         string _packageName = "";
         int _versionMajor = 1, _versionMinor = 0, _versionPatch = 0;
         string _outputDirectory = "";
@@ -63,6 +66,7 @@ namespace SamiVRCBlocksAvatar.Editor
             _createZip = EditorPrefs.GetBool(EditorPrefsKeyCreateZip, false);
 
             LoadSourceFolderHistory();
+            LoadExportPresetHistory();
 
             // 最後に編集していた配布フォルダを復元
             if (string.IsNullOrEmpty(_sourceFolderPath))
@@ -256,6 +260,229 @@ namespace SamiVRCBlocksAvatar.Editor
 
             var parent = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(path));
             return string.IsNullOrEmpty(parent) ? name : parent + "/" + name;
+        }
+
+        void LoadExportPresetHistory()
+        {
+            _exportPresetHistory.Clear();
+            var raw = EditorPrefs.GetString(EditorPrefsKeyExportPresetHistory, "");
+            if (string.IsNullOrEmpty(raw))
+                return;
+
+            ExportPresetHistoryFile data;
+            try
+            {
+                data = JsonUtility.FromJson<ExportPresetHistoryFile>(raw);
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            if (data?.presets == null)
+                return;
+
+            for (int i = 0; i < data.presets.Length; i++)
+            {
+                var preset = data.presets[i];
+                if (preset == null || string.IsNullOrEmpty(preset.packageName))
+                    continue;
+                _exportPresetHistory.Add(preset);
+                if (_exportPresetHistory.Count >= MaxExportPresetHistory)
+                    break;
+            }
+        }
+
+        void RememberExportPreset()
+        {
+            var preset = CaptureExportPreset();
+            if (preset == null)
+                return;
+
+            for (int i = _exportPresetHistory.Count - 1; i >= 0; i--)
+            {
+                if (IsSameExportPresetKey(_exportPresetHistory[i], preset))
+                    _exportPresetHistory.RemoveAt(i);
+            }
+
+            _exportPresetHistory.Insert(0, preset);
+            if (_exportPresetHistory.Count > MaxExportPresetHistory)
+                _exportPresetHistory.RemoveRange(
+                    MaxExportPresetHistory,
+                    _exportPresetHistory.Count - MaxExportPresetHistory);
+
+            var data = new ExportPresetHistoryFile { presets = _exportPresetHistory.ToArray() };
+            EditorPrefs.SetString(EditorPrefsKeyExportPresetHistory, JsonUtility.ToJson(data));
+        }
+
+        ExportPreset CaptureExportPreset()
+        {
+            var packageName = (_packageName ?? "").Trim();
+            if (string.IsNullOrEmpty(packageName))
+                return null;
+
+            EnsureAssetInfo();
+            return new ExportPreset
+            {
+                sourceFolder = (_sourceFolderPath ?? "").Replace("\\", "/").TrimEnd('/'),
+                packageName = packageName,
+                relatedFolders = ClonePaths(_assetInfo.relatedFolders),
+                superReimportFolders = ClonePaths(_assetInfo.superReimportFolders),
+                includeInstaller = _includeInstaller,
+                includeBoothManagerInstaller = _includeBoothManagerInstaller,
+                resetExistingAssetsOnImport = _resetExistingAssetsOnImport
+            };
+        }
+
+        void ApplyExportPreset(ExportPreset preset)
+        {
+            if (preset == null)
+                return;
+
+            var folder = (preset.sourceFolder ?? "").Replace("\\", "/").TrimEnd('/');
+            if (!string.IsNullOrEmpty(folder) &&
+                !string.Equals(folder, _sourceFolderPath, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!AssetDatabase.IsValidFolder(folder))
+                {
+                    EditorUtility.DisplayDialog(
+                        "Package Exporter",
+                        "履歴の配布フォルダが見つかりません。\n" + folder,
+                        "OK");
+                    return;
+                }
+                SelectSourceFolder(folder);
+            }
+
+            EnsureAssetInfo();
+            _packageName = preset.packageName ?? "";
+            _includeInstaller = preset.includeInstaller;
+            _includeBoothManagerInstaller = preset.includeBoothManagerInstaller;
+            _resetExistingAssetsOnImport = preset.resetExistingAssetsOnImport;
+            _assetInfo.relatedFolders = ClonePaths(preset.relatedFolders);
+            _assetInfo.superReimportFolders = ClonePaths(preset.superReimportFolders);
+            _relatedFoldersFoldout = true;
+        }
+
+        bool ExportPresetMatchesCurrent(ExportPreset preset)
+        {
+            if (preset == null || _assetInfo == null)
+                return false;
+            if (!string.Equals(preset.packageName, (_packageName ?? "").Trim(), StringComparison.Ordinal))
+                return false;
+            if (!string.Equals(
+                    (preset.sourceFolder ?? "").Replace("\\", "/").TrimEnd('/'),
+                    (_sourceFolderPath ?? "").Replace("\\", "/").TrimEnd('/'),
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (preset.includeInstaller != _includeInstaller)
+                return false;
+            if (preset.includeBoothManagerInstaller != _includeBoothManagerInstaller)
+                return false;
+            if (preset.resetExistingAssetsOnImport != _resetExistingAssetsOnImport)
+                return false;
+            return SamePaths(preset.relatedFolders, _assetInfo.relatedFolders)
+                && SamePaths(preset.superReimportFolders, _assetInfo.superReimportFolders);
+        }
+
+        static bool IsSameExportPresetKey(ExportPreset a, ExportPreset b)
+        {
+            if (a == null || b == null)
+                return false;
+            return string.Equals(a.packageName, b.packageName, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(
+                    (a.sourceFolder ?? "").Replace("\\", "/").TrimEnd('/'),
+                    (b.sourceFolder ?? "").Replace("\\", "/").TrimEnd('/'),
+                    StringComparison.OrdinalIgnoreCase);
+        }
+
+        void DrawExportPresetHistory()
+        {
+            if (_exportPresetHistory.Count == 0)
+                return;
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.PrefixLabel("設定履歴");
+            ExportPreset selected = null;
+            for (int i = 0; i < _exportPresetHistory.Count; i++)
+            {
+                var preset = _exportPresetHistory[i];
+                if (preset == null || string.IsNullOrEmpty(preset.packageName))
+                    continue;
+
+                var content = new GUIContent(GetExportPresetLabel(preset), GetExportPresetTooltip(preset));
+                using (new EditorGUI.DisabledScope(ExportPresetMatchesCurrent(preset)))
+                {
+                    if (GUILayout.Button(content, EditorStyles.miniButton, GUILayout.Height(18f), GUILayout.MaxWidth(160f)))
+                        selected = preset;
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (selected != null)
+                ApplyExportPreset(selected);
+        }
+
+        string GetExportPresetLabel(ExportPreset preset)
+        {
+            var name = preset.packageName;
+            int sameName = 0;
+            for (int i = 0; i < _exportPresetHistory.Count; i++)
+            {
+                var other = _exportPresetHistory[i];
+                if (other != null &&
+                    string.Equals(other.packageName, name, StringComparison.OrdinalIgnoreCase))
+                    sameName++;
+            }
+
+            if (sameName <= 1)
+                return name;
+
+            var folder = System.IO.Path.GetFileName((preset.sourceFolder ?? "").Replace("\\", "/").TrimEnd('/'));
+            return string.IsNullOrEmpty(folder) ? name : name + " (" + folder + ")";
+        }
+
+        static string GetExportPresetTooltip(ExportPreset preset)
+        {
+            var related = preset.relatedFolders != null && preset.relatedFolders.Length > 0
+                ? string.Join("\n", preset.relatedFolders)
+                : "なし";
+            var resetTargets = preset.superReimportFolders != null && preset.superReimportFolders.Length > 0
+                ? string.Join("\n", preset.superReimportFolders)
+                : "なし";
+            return (preset.sourceFolder ?? "") +
+                "\n関連フォルダ:\n" + related +
+                "\nSamiVRCBlocksAvatarInstaller: " + (preset.includeInstaller ? "含める" : "含めない") +
+                "\nSamirinBoothManager: " + (preset.includeBoothManagerInstaller ? "含める" : "含めない") +
+                "\n既存アセットをリセット: " + (preset.resetExistingAssetsOnImport ? "する" : "しない") +
+                "\nリセット対象:\n" + resetTargets;
+        }
+
+        static string[] ClonePaths(string[] paths)
+        {
+            if (paths == null || paths.Length == 0)
+                return new string[0];
+
+            var copy = new string[paths.Length];
+            for (int i = 0; i < paths.Length; i++)
+                copy[i] = paths[i] ?? "";
+            return copy;
+        }
+
+        static bool SamePaths(string[] a, string[] b)
+        {
+            var left = a ?? new string[0];
+            var right = b ?? new string[0];
+            if (left.Length != right.Length)
+                return false;
+            for (int i = 0; i < left.Length; i++)
+            {
+                var x = (left[i] ?? "").Replace("\\", "/").TrimEnd('/');
+                var y = (right[i] ?? "").Replace("\\", "/").TrimEnd('/');
+                if (!string.Equals(x, y, StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+            return true;
         }
 
         string GetVersionString() => $"{_versionMajor}.{_versionMinor}.{_versionPatch}";
@@ -682,6 +909,7 @@ namespace SamiVRCBlocksAvatar.Editor
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(2);
+            DrawExportPresetHistory();
             GUI.enabled = !string.IsNullOrEmpty(_sourceFolderPath) && !string.IsNullOrEmpty(_packageName) && !string.IsNullOrEmpty(_outputDirectory);
             if (GUILayout.Button("エクスポート !", GUILayout.Height(30), GUILayout.ExpandWidth(true)))
                 RunExport(versionStr);
@@ -722,7 +950,10 @@ namespace SamiVRCBlocksAvatar.Editor
                 GetExportDirectory(_outputDirectory, _packageName, versionStr),
                 $"{_packageName}_ver{versionStr}.unitypackage");
             if (result != null)
+            {
+                RememberExportPreset();
                 EditorUtility.RevealInFinder(result);
+            }
             else if (System.IO.File.Exists(packagePath))
                 EditorUtility.DisplayDialog("上書きしません", "同じファイルが既に存在します。上書きする場合は「既存ファイルを上書きする」にチェックを入れてください。", "OK");
         }
@@ -732,6 +963,7 @@ namespace SamiVRCBlocksAvatar.Editor
             var list = _assetInfo.relatedFolders != null
                 ? new List<string>(_assetInfo.relatedFolders)
                 : new List<string>();
+            int removeIndex = -1;
 
             for (int i = 0; i < list.Count; i++)
             {
@@ -760,16 +992,16 @@ namespace SamiVRCBlocksAvatar.Editor
                     }
                 }
 
-                if (GUILayout.Button("−", GUILayout.MaxWidth(22)))
-                {
-                    list.RemoveAt(i);
-                    i--;
-                }
+                if (GUILayout.Button("−", GUILayout.Width(22f)))
+                    removeIndex = i;
                 EditorGUILayout.EndHorizontal();
 
                 if (!string.IsNullOrEmpty(list[i]) && !AssetDatabase.IsValidFolder(list[i]))
                     EditorGUILayout.HelpBox("無効なフォルダパスです: " + list[i], MessageType.Warning);
             }
+
+            if (removeIndex >= 0 && removeIndex < list.Count)
+                list.RemoveAt(removeIndex);
 
             if (GUILayout.Button("+ 関連フォルダを追加"))
                 list.Add("");
@@ -782,6 +1014,7 @@ namespace SamiVRCBlocksAvatar.Editor
             var list = _assetInfo.superReimportFolders != null
                 ? new List<string>(_assetInfo.superReimportFolders)
                 : new List<string>();
+            int removeIndex = -1;
 
             for (int i = 0; i < list.Count; i++)
             {
@@ -812,20 +1045,18 @@ namespace SamiVRCBlocksAvatar.Editor
                     }
                 }
 
-                if (GUILayout.Button("−", GUILayout.MaxWidth(22)))
-                {
-                    list.RemoveAt(i);
-                    i--;
-                }
+                if (GUILayout.Button("−", GUILayout.Width(22f)))
+                    removeIndex = i;
                 EditorGUILayout.EndHorizontal();
 
-                if (i < 0 || i >= list.Count)
-                    continue;
                 if (!string.IsNullOrEmpty(list[i]) && PackageExporter.IsSuperReimportExcludedFolder(list[i]))
                     EditorGUILayout.HelpBox("このフォルダは削除しません: " + list[i], MessageType.Warning);
                 else if (!string.IsNullOrEmpty(list[i]) && !AssetDatabase.IsValidFolder(list[i]))
                     EditorGUILayout.HelpBox("無効なフォルダパスです: " + list[i], MessageType.Warning);
             }
+
+            if (removeIndex >= 0 && removeIndex < list.Count)
+                list.RemoveAt(removeIndex);
 
             if (GUILayout.Button("+ SuperReImport 対象フォルダを追加"))
                 list.Add("");
@@ -908,6 +1139,24 @@ namespace SamiVRCBlocksAvatar.Editor
             }
             EditorGUI.indentLevel--;
             result = list.ToArray();
+        }
+
+        [Serializable]
+        class ExportPresetHistoryFile
+        {
+            public ExportPreset[] presets;
+        }
+
+        [Serializable]
+        class ExportPreset
+        {
+            public string sourceFolder;
+            public string packageName;
+            public string[] relatedFolders;
+            public string[] superReimportFolders;
+            public bool includeInstaller;
+            public bool includeBoothManagerInstaller;
+            public bool resetExistingAssetsOnImport;
         }
     }
 }

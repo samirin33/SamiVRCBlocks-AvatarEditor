@@ -175,6 +175,14 @@ namespace SamiVRCBlocksAvatar.Editor
             }
         }
 
+        static void SetBackgroundScaleToFit(VisualElement element)
+        {
+            element.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Contain);
+            element.style.backgroundRepeat = new BackgroundRepeat(Repeat.NoRepeat, Repeat.NoRepeat);
+            element.style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Center);
+            element.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center);
+        }
+
         static VisualElement CreateSliceLabel(float centerX, float centerY, SliceInfo slice, float fontSize)
         {
             var holder = new VisualElement();
@@ -195,7 +203,7 @@ namespace SamiVRCBlocksAvatar.Editor
             icon.style.width = 50f;
             icon.style.height = 50f;
             icon.style.backgroundImage = new StyleBackground(slice.Icon != null ? slice.Icon : Load("Vrc3/BSX_GM_Default"));
-            icon.style.unityBackgroundScaleMode = ScaleMode.ScaleToFit;
+            SetBackgroundScaleToFit(icon);
             holder.Add(icon);
 
             if (slice.SubIcon != null)
@@ -219,7 +227,7 @@ namespace SamiVRCBlocksAvatar.Editor
                 sub.style.width = 20f;
                 sub.style.height = 20f;
                 sub.style.backgroundImage = new StyleBackground(slice.SubIcon);
-                sub.style.unityBackgroundScaleMode = ScaleMode.ScaleToFit;
+                SetBackgroundScaleToFit(sub);
                 badge.Add(sub);
                 icon.Add(badge);
             }
@@ -280,7 +288,7 @@ namespace SamiVRCBlocksAvatar.Editor
             if (icon != null)
             {
                 holder.style.backgroundImage = new StyleBackground(icon);
-                holder.style.unityBackgroundScaleMode = ScaleMode.ScaleToFit;
+                SetBackgroundScaleToFit(holder);
             }
 
             if (selected)

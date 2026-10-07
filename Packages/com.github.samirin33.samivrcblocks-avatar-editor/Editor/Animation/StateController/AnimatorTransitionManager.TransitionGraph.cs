@@ -157,6 +157,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             _reorderIncoming = null;
             _selectionBucket = FocusedListBucket.None;
             _selectedRowIndices.Clear();
+            _pendingTransitionSelectionActive = false;
+            _pendingSelectedRowIndices.Clear();
             _lastConditionBufferSignature = "";
             var seen = new HashSet<int>();
 

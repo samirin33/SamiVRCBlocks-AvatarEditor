@@ -108,6 +108,15 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private FocusedListBucket _selectionBucket = FocusedListBucket.None;
         private readonly HashSet<int> _selectedRowIndices = new HashSet<int>();
 
+        /// <summary>
+        /// テキスト入力中に別トランジションへ選択が移るとき、入力確定後の次 Layout で適用する選択。
+        /// 同じイベント内でバインド先を変えると、未確定テキストが移動先のフィールドへ書き込まれる。
+        /// </summary>
+        private bool _pendingTransitionSelectionActive;
+        private FocusedListBucket _pendingSelectionBucket = FocusedListBucket.None;
+        private bool _pendingSelectionIsOutgoing;
+        private readonly List<int> _pendingSelectedRowIndices = new List<int>();
+
         private readonly List<ConditionEditRow> _conditionBuffer = new List<ConditionEditRow>();
         private string _lastConditionBufferSignature = "";
         private ReorderableList _reorderConditions;
@@ -253,6 +262,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
         private void DrawMainContent()
         {
+            ApplyPendingTransitionRowSelectionOnLayout();
+
             // var showList = (_visiblePanels & PanelVisibility.TransitionList) != 0;
             // var showSettings = (_visiblePanels & PanelVisibility.SettingsAndConditions) != 0;
             // var showClip = (_visiblePanels & PanelVisibility.Clipboard) != 0;
@@ -295,6 +306,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 }
                 EditorGUILayout.EndVertical();
             }
+
+            ReleasePendingTransitionTextFocus();
 
             DrawSelectedStateBehaviourSection();
 
