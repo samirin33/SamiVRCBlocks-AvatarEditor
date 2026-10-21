@@ -105,149 +105,18 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             return prop?.GetValue(curve) as string;
         }
 
-        public static IEnumerable GetCurveKeyframes(object curve)
-        {
-            if (curve == null) return null;
-            var field = curve.GetType().GetField("m_Keyframes", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            return field?.GetValue(curve) as IEnumerable;
-        }
-
-        public static void SetCurveKeyframesOrder(object curve, IList keyframeObjects)
-        {
-            if (curve == null || keyframeObjects == null) return;
-
-            var field = curve.GetType().GetField("m_Keyframes", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            var keyframeList = field?.GetValue(curve);
-            if (keyframeList == null) return;
-
-            var clearMethod = keyframeList.GetType().GetMethod("Clear");
-            var addMethod = keyframeList.GetType().GetMethod("Add");
-            if (clearMethod == null || addMethod == null) return;
-
-            clearMethod.Invoke(keyframeList, null);
-            foreach (var kf in keyframeObjects)
-            {
-                addMethod.Invoke(keyframeList, new[] { kf });
-            }
-        }
-
-        public static float GetKeyframeTime(object keyframe)
-        {
-            if (keyframe == null) return 0;
-            var prop = keyframe.GetType().GetProperty("time", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            return prop != null ? (float)prop.GetValue(keyframe) : 0;
-        }
-
-        public static float GetKeyframeValue(object keyframe)
-        {
-            if (keyframe == null) return 0;
-            var prop = keyframe.GetType().GetProperty("value", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            return prop != null ? (float)prop.GetValue(keyframe) : 0;
-        }
-
-        public static void SetKeyframeValue(object keyframe, float value)
-        {
-            if (keyframe == null) return;
-            var prop = keyframe.GetType().GetProperty("value", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            prop?.SetValue(keyframe, value);
-        }
-
-        public static float GetKeyframeInTangent(object keyframe)
-        {
-            if (keyframe == null) return 0;
-            var prop = keyframe.GetType().GetProperty("inTangent", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            return prop != null ? (float)prop.GetValue(keyframe) : 0;
-        }
-
-        public static void SetKeyframeInTangent(object keyframe, float value)
-        {
-            if (keyframe == null) return;
-            var prop = keyframe.GetType().GetProperty("inTangent", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            prop?.SetValue(keyframe, value);
-        }
-
-        public static float GetKeyframeOutTangent(object keyframe)
-        {
-            if (keyframe == null) return 0;
-            var prop = keyframe.GetType().GetProperty("outTangent", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            return prop != null ? (float)prop.GetValue(keyframe) : 0;
-        }
-
-        public static void SetKeyframeOutTangent(object keyframe, float value)
-        {
-            if (keyframe == null) return;
-            var prop = keyframe.GetType().GetProperty("outTangent", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            prop?.SetValue(keyframe, value);
-        }
-
-        public static float GetKeyframeInWeight(object keyframe)
-        {
-            if (keyframe == null) return 0;
-            var prop = keyframe.GetType().GetProperty("inWeight", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            return prop != null ? (float)prop.GetValue(keyframe) : 0;
-        }
-
-        public static void SetKeyframeInWeight(object keyframe, float value)
-        {
-            if (keyframe == null) return;
-            var prop = keyframe.GetType().GetProperty("inWeight", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            prop?.SetValue(keyframe, value);
-        }
-
-        public static float GetKeyframeOutWeight(object keyframe)
-        {
-            if (keyframe == null) return 0;
-            var prop = keyframe.GetType().GetProperty("outWeight", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            return prop != null ? (float)prop.GetValue(keyframe) : 0;
-        }
-
-        public static void SetKeyframeOutWeight(object keyframe, float value)
-        {
-            if (keyframe == null) return;
-            var prop = keyframe.GetType().GetProperty("outWeight", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            prop?.SetValue(keyframe, value);
-        }
-
-        public static void SetKeyframeWeightedMode(object keyframe, WeightedMode mode)
-        {
-            if (keyframe == null) return;
-            var prop = keyframe.GetType().GetProperty("weightedMode", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            prop?.SetValue(keyframe, mode);
-        }
-
-        public static void SaveKeySelection(object state, string undoLabel)
-        {
-            if (state == null) return;
-            var method = state.GetType().GetMethod("SaveKeySelection", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            method?.Invoke(state, new object[] { undoLabel });
-        }
-
-        public static void SaveCurve(object state, AnimationClip clip, object curve, string undoLabel)
-        {
-            if (state == null || clip == null || curve == null) return;
-            var methods = state.GetType().GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            foreach (var m in methods)
-            {
-                if (m.Name == "SaveCurve" && m.GetParameters().Length == 3)
-                {
-                    m.Invoke(state, new object[] { clip, curve, undoLabel });
-                    return;
-                }
-            }
-        }
-
         public static void ResampleAnimation(object state)
         {
             if (state == null) return;
             var method = state.GetType().GetMethod("ResampleAnimation", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            method?.Invoke(state, Array.Empty<object>());
-        }
-
-        public static void ClearSelectedKeysCache(object state)
-        {
-            if (state == null) return;
-            var field = state.GetType().GetField("m_SelectedKeysCache", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            field?.SetValue(state, null);
+            if (method == null || method.GetParameters().Length != 0) return;
+            try
+            {
+                method.Invoke(state, Array.Empty<object>());
+            }
+            catch (Exception)
+            {
+            }
         }
 
         /// <summary>

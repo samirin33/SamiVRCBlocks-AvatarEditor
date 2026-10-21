@@ -6,9 +6,12 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// .unitypackage に同梱され、導入先でエクスポート対象フォルダを一度削除してから中身を再インポートする。
+/// .unitypackage に同梱され、導入先でエクスポート対象フォルダを一度取り除いてから中身を再インポートする。
 /// 旧バージョンで削除済みのファイルが残ること、GUID が食い違ったまま参照が壊れることを避ける。
+/// 取り除くフォルダは確認ダイアログを出したうえで Library/SamiVRCBlocks/SuperReImporterBackup へ退避し、
+/// 失敗時は退避分を元の場所へ戻して自分自身（Assets/Editor/SuperReImporter）も削除する。
 /// Packages 上の編集用ソースは defineConstraints でコンパイルしない。ここが動くのは Assets へ展開されたときだけ。
+/// このファイルは導入先へ単体でコピーされるため、パッケージ内の他のコードに依存させない。
 /// </summary>
 public static class SuperReImporter
 {
@@ -42,6 +45,18 @@ public static class SuperReImporter
 
     /// <summary>対象フォルダが戻らないまま打ち切るまでの秒数。</summary>
     const double IdleSecondsBeforeGiveUp = 30.0;
+
+    /// <summary>Assets の外に置き、退避中に再インポートやコンパイルの対象にならないようにする。</summary>
+    const string BackupRootRelative = "Library/SamiVRCBlocks/SuperReImporterBackup";
+    const string BackupManifestFileName = "moved.txt";
+    const int MaxBackupsToKeep = 5;
+
+    enum ResetChoice
+    {
+        BackupAndReplace,
+        Cancel,
+        OverwriteWithoutRemoving
+    }
 
     static bool _busy;
     static bool _tickQueued;
@@ -153,6 +168,20 @@ public static class SuperReImporter
                 return;
             }
 
+            var existing = new List<string>();
+            for (int i = 0; i < folders.Count; i++)
+            {
+                if (AssetDatabase.IsValidFolder(folders[i]) || Directory.Exists(ToAbsolute(folders[i])))
+                    existing.Add(folders[i]);
+            }
+
+            var choice = existing.Count > 0 ? AskResetChoice(existing) : ResetChoice.OverwriteWithoutRemoving;
+            if (choice == ResetChoice.Cancel)
+            {
+                CancelByUser(stamp, payloadFull);
+                return;
+            }
+
             var tempPayload = Path.Combine(
                 Path.GetTempPath(),
                 "SuperReImporter_" + ExportToken + "_" + StableProjectId() + ".unitypackage");
@@ -160,20 +189,38 @@ public static class SuperReImporter
 
             EditorPrefs.SetString(Pref("Payload"), tempPayload);
             EditorPrefs.SetString(Pref("Stamp"), stamp);
+            EditorPrefs.DeleteKey(Pref("Backup"));
             EditorPrefs.SetString(Pref("Phase"), PhaseDelete);
             EditorPrefs.SetBool(Pref("Launched"), false);
             EditorPrefs.SetInt(Pref("Retries"), 0);
 
-            if (folders.Count == 0)
-                Log("削除対象フォルダがないため、削除せず再インポートします。");
+            if (existing.Count == 0)
+            {
+                Log("既存の対象フォルダがないため、そのまま再インポートします。");
+            }
+            else if (choice == ResetChoice.OverwriteWithoutRemoving)
+            {
+                Log("既存フォルダを残したまま上書きインポートします: " + string.Join(", ", existing.ToArray()));
+            }
             else
-                Log("指定フォルダを一度削除してから再インポートします: " + string.Join(", ", folders.ToArray()));
+            {
+                var backupRoot = CreateBackupRoot();
+                EditorPrefs.SetString(Pref("Backup"), backupRoot);
+                Log("指定フォルダを退避してから再インポートします: " + string.Join(", ", existing.ToArray()) +
+                    " / 退避先: " + backupRoot);
 
-            EditorUtility.DisplayProgressBar("SuperReImporter", "既存フォルダを削除しています...", 0.35f);
-            for (int i = 0; i < folders.Count; i++)
-                DeleteExportFolder(folders[i]);
-            EditorUtility.ClearProgressBar();
-            AssetDatabase.Refresh();
+                EditorUtility.DisplayProgressBar("SuperReImporter", "既存フォルダを退避しています...", 0.35f);
+                try
+                {
+                    for (int i = 0; i < existing.Count; i++)
+                        MoveExportFolderToBackup(existing[i], backupRoot);
+                }
+                finally
+                {
+                    EditorUtility.ClearProgressBar();
+                    AssetDatabase.Refresh();
+                }
+            }
 
             // スクリプト削除でドメインリロードした場合は、次回の Tick が再インポートへ進む。
             QueueTick();
@@ -357,6 +404,9 @@ public static class SuperReImporter
         AssetDatabase.importPackageCancelled -= OnImportCancelled;
     }
 
+    /// <summary>
+    /// 失敗として終える。退避済みフォルダを戻し、Payload を手動インポート用に Library へ残して、自分自身を削除する。
+    /// </summary>
     static void MarkFailed(string stamp, string message)
     {
         if (!string.IsNullOrEmpty(stamp))
@@ -365,7 +415,149 @@ public static class SuperReImporter
         EditorPrefs.SetBool(Pref("Launched"), false);
         Unsubscribe();
         EditorUtility.ClearProgressBar();
-        LogError(message);
+
+        var backupRoot = EditorPrefs.GetString(Pref("Backup"), "");
+        var restoreNote = "";
+        try
+        {
+            if (!string.IsNullOrEmpty(backupRoot))
+            {
+                var notRestored = RestoreBackup(backupRoot);
+                restoreNote = notRestored.Count == 0
+                    ? "退避したフォルダを元の場所へ戻しました。"
+                    : "次の項目は同じ場所に別のファイルがあるため戻していません（退避先に残っています）:\n  " +
+                      string.Join("\n  ", notRestored.ToArray());
+            }
+        }
+        catch (Exception e)
+        {
+            restoreNote = "退避したフォルダの復元に失敗しました: " + e.Message;
+            LogError(restoreNote);
+        }
+
+        string savedPayload = null;
+        try
+        {
+            var tempPayload = EditorPrefs.GetString(Pref("Payload"), "");
+            var payloadSource = !string.IsNullOrEmpty(tempPayload) && File.Exists(tempPayload)
+                ? tempPayload
+                : ToAbsolute(ReimporterAssetPath + "/" + PayloadFileName);
+            if (File.Exists(payloadSource))
+            {
+                if (string.IsNullOrEmpty(backupRoot))
+                    backupRoot = CreateBackupRoot();
+                savedPayload = SavePayloadCopy(backupRoot, payloadSource);
+            }
+        }
+        catch (Exception e)
+        {
+            LogWarning("Payload の保存に失敗: " + e.Message);
+        }
+
+        DeleteTempPayload();
+        EditorPrefs.DeleteKey(Pref("Payload"));
+        EditorPrefs.DeleteKey(Pref("Backup"));
+
+        var summary = "SuperReImporter による再インポートに失敗しました。\n" + message;
+        if (!string.IsNullOrEmpty(restoreNote))
+            summary += "\n\n" + restoreNote;
+        if (!string.IsNullOrEmpty(backupRoot))
+            summary += "\n\n退避先: " + backupRoot;
+        if (!string.IsNullOrEmpty(savedPayload))
+            summary += "\n\n手動でインポートする場合はこのファイルを使ってください:\n" + savedPayload;
+        LogError(summary);
+        if (!Application.isBatchMode)
+            EditorUtility.DisplayDialog("SuperReImporter", summary, "OK");
+
+        RemoveSelfFolder();
+    }
+
+    static ResetChoice AskResetChoice(List<string> existingFolders)
+    {
+        if (Application.isBatchMode)
+            return ResetChoice.BackupAndReplace;
+
+        const int maxListed = 12;
+        var listed = new List<string>();
+        for (int i = 0; i < existingFolders.Count && i < maxListed; i++)
+            listed.Add("・" + existingFolders[i]);
+        if (existingFolders.Count > maxListed)
+            listed.Add("ほか " + (existingFolders.Count - maxListed) + " 件");
+
+        var message =
+            "パッケージの更新のため、次のフォルダを一度取り除いてから入れ直します。\n" +
+            "フォルダ内で編集・追加したファイルも取り除かれます（削除はせず、プロジェクトの " +
+            BackupRootRelative + " に退避します）。\n\n" +
+            string.Join("\n", listed.ToArray());
+
+        var result = EditorUtility.DisplayDialogComplex(
+            "SuperReImporter",
+            message,
+            "退避して入れ替える",
+            "キャンセル",
+            "取り除かずに上書き");
+        switch (result)
+        {
+            case 0: return ResetChoice.BackupAndReplace;
+            case 2: return ResetChoice.OverwriteWithoutRemoving;
+            default: return ResetChoice.Cancel;
+        }
+    }
+
+    static void CancelByUser(string stamp, string payloadFull)
+    {
+        EditorPrefs.SetString(Pref("Stamp"), stamp);
+        EditorPrefs.SetString(Pref("Phase"), PhaseDone);
+        EditorPrefs.SetBool(Pref("Launched"), false);
+
+        string saved = null;
+        try
+        {
+            saved = SavePayloadCopy(CreateBackupRoot(), payloadFull);
+        }
+        catch (Exception e)
+        {
+            LogWarning("Payload の保存に失敗: " + e.Message);
+        }
+
+        Log("キャンセルしました。既存フォルダは変更していません。" +
+            (string.IsNullOrEmpty(saved) ? "" : " 後で更新する場合はこのファイルを手動でインポートしてください: " + saved));
+        RemoveSelfFolder();
+        if (!ReimporterFolderExists())
+            EditorPrefs.DeleteKey(Pref("Stamp"));
+    }
+
+    static void RemoveSelfFolder()
+    {
+        try
+        {
+            if (!ReimporterFolderExists())
+                return;
+            Log("SuperReImporter を削除します: " + ReimporterAssetPath);
+            ForceDeleteAsset(ReimporterAssetPath);
+            AssetDatabase.Refresh();
+            if (ReimporterFolderExists())
+                LogWarning("SuperReImporter フォルダが残っています。手動で削除してください: " + ReimporterAssetPath);
+        }
+        catch (Exception e)
+        {
+            LogWarning("SuperReImporter の削除に失敗: " + e.Message);
+        }
+    }
+
+    static void DeleteTempPayload()
+    {
+        var tempPayload = EditorPrefs.GetString(Pref("Payload"), "");
+        if (string.IsNullOrEmpty(tempPayload) || !File.Exists(tempPayload))
+            return;
+        try
+        {
+            File.Delete(tempPayload);
+        }
+        catch (Exception e)
+        {
+            LogWarning("一時ファイルの削除に失敗: " + e.Message);
+        }
     }
 
     static void CleanupSelf()
@@ -381,43 +573,23 @@ public static class SuperReImporter
             Unsubscribe();
             EditorUtility.ClearProgressBar();
 
-            var tempPayload = EditorPrefs.GetString(Pref("Payload"), "");
+            DeleteTempPayload();
+            var backupRoot = EditorPrefs.GetString(Pref("Backup"), "");
             EditorPrefs.SetString(Pref("Phase"), PhaseDone);
             EditorPrefs.DeleteKey(Pref("Payload"));
+            EditorPrefs.DeleteKey(Pref("Backup"));
             EditorPrefs.SetBool(Pref("Launched"), false);
             EditorPrefs.SetInt(Pref("Retries"), 0);
 
-            if (!string.IsNullOrEmpty(tempPayload) && File.Exists(tempPayload))
-            {
-                try
-                {
-                    File.Delete(tempPayload);
-                }
-                catch (Exception e)
-                {
-                    LogWarning("一時ファイルの削除に失敗: " + e.Message);
-                }
-            }
+            if (!string.IsNullOrEmpty(backupRoot) && Directory.Exists(backupRoot))
+                Log("更新前のフォルダは退避先に残しています。不要なら削除してください: " + backupRoot);
 
+            RemoveSelfFolder();
             if (!ReimporterFolderExists())
             {
                 // スタンプを消す。同じ更新時刻のまま再インポートされても、次回は新しい導入として扱う。
                 EditorPrefs.DeleteKey(Pref("Stamp"));
-                Log("完了しました。");
-                return;
-            }
-
-            Log("SuperReImporter を削除します: " + ReimporterAssetPath);
-            ForceDeleteAsset(ReimporterAssetPath);
-            AssetDatabase.Refresh();
-            if (!ReimporterFolderExists())
-            {
-                EditorPrefs.DeleteKey(Pref("Stamp"));
-                Log("完了しました。対象フォルダを削除し、パッケージを再インポートしました。");
-            }
-            else
-            {
-                LogWarning("再インポートは完了しましたが、SuperReImporter フォルダが残っています: " + ReimporterAssetPath);
+                Log("完了しました。パッケージを再インポートしました。");
             }
         }
         catch (Exception e)
@@ -480,19 +652,22 @@ public static class SuperReImporter
         return path.StartsWith(parent + "/", StringComparison.OrdinalIgnoreCase);
     }
 
-    static void DeleteExportFolder(string assetFolder)
+    /// <summary>
+    /// 対象フォルダを退避先へ移す。失敗時は例外をそのまま投げ、呼び出し側（MarkFailed）で元に戻す。
+    /// </summary>
+    static void MoveExportFolderToBackup(string assetFolder, string backupRoot)
     {
         var folder = (assetFolder ?? "").Replace("\\", "/").TrimEnd('/');
         if (string.IsNullOrEmpty(folder) || folder == "Assets")
         {
-            LogWarning("Assets ルートは削除しません。");
+            LogWarning("Assets ルートは退避しません。");
             return;
         }
         if (!folder.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
             return;
         if (IsProtectedAssetPath(folder))
         {
-            Log("インポーターのため削除しません: " + folder);
+            Log("インポーターのため退避しません: " + folder);
             return;
         }
 
@@ -501,21 +676,14 @@ public static class SuperReImporter
         AddKeepIfInside(keeps, folder, AvatarInstallerAssetPath);
         AddKeepIfInside(keeps, folder, BoothManagerInstallerAssetPath);
 
-        try
+        if (keeps.Count > 0)
         {
-            if (keeps.Count > 0)
-            {
-                Log("指定フォルダのうち、インポーターは残して削除します: " + folder);
-                DeleteTreeExcept(ToAbsolute(folder), keeps);
-            }
-            else
-            {
-                ForceDeleteAsset(folder);
-            }
+            Log("指定フォルダのうち、インポーターは残して退避します: " + folder);
+            BackupTreeExcept(ToAbsolute(folder), keeps, backupRoot);
         }
-        catch (Exception e)
+        else
         {
-            LogWarning("フォルダ削除に失敗: " + folder + " / " + e.Message);
+            MovePathAndMetaToBackup(ToAbsolute(folder), backupRoot);
         }
     }
 
@@ -526,9 +694,9 @@ public static class SuperReImporter
     }
 
     /// <summary>
-    /// directory 以下を消す。keeps とその先祖は残す。
+    /// directory 以下を退避する。keeps とその先祖は残す。
     /// </summary>
-    static void DeleteTreeExcept(string directoryFullPath, List<string> keepFullPaths)
+    static void BackupTreeExcept(string directoryFullPath, List<string> keepFullPaths, string backupRoot)
     {
         if (string.IsNullOrEmpty(directoryFullPath) || !Directory.Exists(directoryFullPath))
             return;
@@ -543,26 +711,26 @@ public static class SuperReImporter
                 var entry = entries[i];
                 if (entry.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
                     continue;
-                DeleteTreeExceptEntry(entry, keepFullPaths);
+                BackupTreeExceptEntry(entry, keepFullPaths, backupRoot);
             }
             return;
         }
 
-        DeletePathAndMeta(directoryFullPath);
+        MovePathAndMetaToBackup(directoryFullPath, backupRoot);
     }
 
-    static void DeleteTreeExceptEntry(string entryFullPath, List<string> keepFullPaths)
+    static void BackupTreeExceptEntry(string entryFullPath, List<string> keepFullPaths, string backupRoot)
     {
         if (IsUnderAny(entryFullPath, keepFullPaths))
             return;
 
         if (Directory.Exists(entryFullPath) && ContainsAnyKeep(entryFullPath, keepFullPaths))
         {
-            DeleteTreeExcept(entryFullPath, keepFullPaths);
+            BackupTreeExcept(entryFullPath, keepFullPaths, backupRoot);
             return;
         }
 
-        DeletePathAndMeta(entryFullPath);
+        MovePathAndMetaToBackup(entryFullPath, backupRoot);
     }
 
     static bool IsUnderAny(string fullPath, List<string> keepFullPaths)
@@ -586,16 +754,158 @@ public static class SuperReImporter
         return false;
     }
 
-    static void DeletePathAndMeta(string fullPath)
+    static string ProjectRoot()
     {
-        if (Directory.Exists(fullPath))
-            Directory.Delete(fullPath, true);
-        else if (File.Exists(fullPath))
-            File.Delete(fullPath);
+        return Path.GetFullPath(Path.GetDirectoryName(Application.dataPath));
+    }
+
+    static string ToProjectRelative(string fullPath)
+    {
+        var root = ProjectRoot().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
+                   Path.DirectorySeparatorChar;
+        var full = Path.GetFullPath(fullPath);
+        if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("プロジェクト外のパスは退避できません: " + full);
+        return full.Substring(root.Length).Replace("\\", "/");
+    }
+
+    static string FromProjectRelative(string baseDirectory, string relative)
+    {
+        return Path.Combine(baseDirectory, relative.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    static string CreateBackupRoot()
+    {
+        var parent = FromProjectRelative(ProjectRoot(), BackupRootRelative);
+        Directory.CreateDirectory(parent);
+        PruneOldBackups(parent);
+
+        var name = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        var root = Path.Combine(parent, name);
+        for (int i = 1; Directory.Exists(root); i++)
+            root = Path.Combine(parent, name + "_" + i);
+        Directory.CreateDirectory(root);
+        return root;
+    }
+
+    static void PruneOldBackups(string parent)
+    {
+        try
+        {
+            var dirs = Directory.GetDirectories(parent);
+            if (dirs.Length < MaxBackupsToKeep)
+                return;
+            Array.Sort(dirs, StringComparer.Ordinal);
+            for (int i = 0; i <= dirs.Length - MaxBackupsToKeep; i++)
+                Directory.Delete(dirs[i], true);
+        }
+        catch (Exception e)
+        {
+            LogWarning("古い退避フォルダの削除に失敗: " + e.Message);
+        }
+    }
+
+    static void MovePathAndMetaToBackup(string fullPath, string backupRoot)
+    {
+        if (!Directory.Exists(fullPath) && !File.Exists(fullPath))
+            return;
+
+        var relative = ToProjectRelative(fullPath);
+        var dest = FromProjectRelative(backupRoot, relative);
+        var destParent = Path.GetDirectoryName(dest);
+        if (!string.IsNullOrEmpty(destParent))
+            Directory.CreateDirectory(destParent);
+
+        // 移動途中で失敗しても復元対象に含まれるよう、先に記録する。
+        File.AppendAllText(Path.Combine(backupRoot, BackupManifestFileName), relative + "\n");
+        MovePath(fullPath, dest);
 
         var meta = fullPath + ".meta";
         if (File.Exists(meta))
-            File.Delete(meta);
+            MovePath(meta, dest + ".meta");
+        Log("退避しました: " + relative);
+    }
+
+    /// <summary>
+    /// 退避した項目を元の場所へ戻す。元の場所に既に何かある項目は戻さず、その一覧を返す。
+    /// </summary>
+    static List<string> RestoreBackup(string backupRoot)
+    {
+        var notRestored = new List<string>();
+        var manifest = Path.Combine(backupRoot, BackupManifestFileName);
+        if (!File.Exists(manifest))
+            return notRestored;
+
+        var lines = File.ReadAllLines(manifest);
+        var restoredAny = false;
+        for (int i = lines.Length - 1; i >= 0; i--)
+        {
+            var relative = (lines[i] ?? "").Trim();
+            if (string.IsNullOrEmpty(relative))
+                continue;
+
+            var backup = FromProjectRelative(backupRoot, relative);
+            if (!Directory.Exists(backup) && !File.Exists(backup))
+                continue;
+
+            var original = FromProjectRelative(ProjectRoot(), relative);
+            if (Directory.Exists(original) || File.Exists(original))
+            {
+                notRestored.Add(relative);
+                continue;
+            }
+
+            var parent = Path.GetDirectoryName(original);
+            if (!string.IsNullOrEmpty(parent))
+                Directory.CreateDirectory(parent);
+            MovePath(backup, original);
+            if (File.Exists(backup + ".meta") && !File.Exists(original + ".meta"))
+                MovePath(backup + ".meta", original + ".meta");
+            restoredAny = true;
+            Log("元に戻しました: " + relative);
+        }
+
+        if (restoredAny)
+            AssetDatabase.Refresh();
+        return notRestored;
+    }
+
+    static string SavePayloadCopy(string backupRoot, string payloadFullPath)
+    {
+        var dest = Path.Combine(backupRoot, PayloadFileName);
+        File.Copy(payloadFullPath, dest, true);
+        return dest;
+    }
+
+    static void MovePath(string source, string destination)
+    {
+        if (Directory.Exists(source))
+        {
+            try
+            {
+                Directory.Move(source, destination);
+            }
+            catch (IOException)
+            {
+                // 別ボリューム（シンボリックリンク先など）では Move できないのでコピーしてから消す。
+                CopyDirectory(source, destination);
+                Directory.Delete(source, true);
+            }
+            return;
+        }
+
+        if (File.Exists(destination))
+            File.Delete(destination);
+        File.Move(source, destination);
+    }
+
+    static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        foreach (var file in Directory.GetFiles(source))
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), true);
+        foreach (var dir in Directory.GetDirectories(source))
+            CopyDirectory(dir, Path.Combine(destination, Path.GetFileName(dir)));
     }
 
     static void ForceDeleteAsset(string assetPath)

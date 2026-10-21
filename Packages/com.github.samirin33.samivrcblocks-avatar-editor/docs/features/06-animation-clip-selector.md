@@ -45,7 +45,7 @@
 - **設定アセット**（AnimationClipSelectorSettings）で、アイテム間の余白や、競合警告を出さないクリップ（無視リスト）などを設定できます
 - **BlendTree 入れ子表示** トグルで、BlendTree を `{ステート名}: {BlendTree名}` の折りたたみグループとして表示するか、親グループに平坦化するかを切り替えられます
 - ツールバーの **再読み込み**（↻）ボタンで、Clip 一覧と競合・Missing 表示を手動で更新できます
-- 設定アセットは `Assets/SamiVRCBlocksAvatar/Editor/AnimationClipSelectorSettings.asset` に自動作成されます
+- 設定はプロジェクトの `UserSettings/SamiVRCBlocks/AnimationClipSelectorSettings.asset` に保存されます（Assets 外なので配布物やバージョン管理に混ざりません）。旧バージョンの `Assets/SamiVRCBlocksAvatar/Editor/AnimationClipSelectorSettings.asset` があれば初回に設定を引き継ぎます。引き継ぎ後は削除して構いません
 
 ## 注意事項
 

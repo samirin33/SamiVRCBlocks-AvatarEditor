@@ -128,7 +128,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                             .ToHashSet();
                         if (AnimatorTransitionMultiCopy.TryPasteMergedOverwrite(item.transition))
                         {
-                            AssetDatabase.SaveAssets();
+                            SaveOwningAssets(item.transition);
                             RefreshSelection();
                             RestoreRowSelection(preservedBucket, preservedTransitionIds);
                             InternalEditorUtility.RepaintAllViews();
@@ -143,9 +143,10 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                         {
                             if (tr == null)
                                 return;
+                            var ownerController = AnimatorTransitionEditOperations.GetController(tr);
                             if (AnimatorTransitionEditOperations.TryDeleteTransition(tr, "Delete Transition"))
                             {
-                                AssetDatabase.SaveAssets();
+                                SaveOwningAssets(ownerController);
                                 RefreshSelection();
                                 Repaint();
                             }
@@ -282,8 +283,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 return;
             }
 
-            EditorUtility.SetDirty(c);
-            AssetDatabase.SaveAssets();
+            SaveOwningAssets(c);
             // RefreshSelection() は Selection だけから再構築するため、未選択の新規トランジションが一覧に載らない。
             // 追加した行は現在のバケットのリストへ直接載せる（rows は _outgoing または _incoming と同一参照）。
             var g = FindGroup(neu);

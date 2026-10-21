@@ -8,8 +8,6 @@ namespace SamiVRCBlocksAvatar.Editor
 {
     public class PackageExporterWindow : EditorWindow
     {
-        const string EditorPrefsKeyOutputDirectory = "SamiVRCBlocksAvatar.PackageExporter.OutputDirectory";
-        const string EditorPrefsKeySourceFolder = "SamiVRCBlocksAvatar.PackageExporter.SourceFolder";
         const string EditorPrefsKeySourceFolderHistory = "SamiVRCBlocksAvatar.PackageExporter.SourceFolderHistory";
         const int MaxSourceFolderHistory = 5;
         const string EditorPrefsKeyOverwrite = "SamiVRCBlocksAvatar.PackageExporter.Overwrite";
@@ -36,6 +34,7 @@ namespace SamiVRCBlocksAvatar.Editor
         bool _resetExistingAssetsOnImport;
         bool _useVersionFolder;
         bool _createZip;
+        bool _exportQueued;
 
         PackageAssetInfo _assetInfo;
         UnityEngine.Object _boothAssetInfo;
@@ -57,7 +56,7 @@ namespace SamiVRCBlocksAvatar.Editor
 
         void OnEnable()
         {
-            _outputDirectory = EditorPrefs.GetString(EditorPrefsKeyOutputDirectory, "");
+            _outputDirectory = PackageExporterSettings.OutputDirectory;
             _overwrite = EditorPrefs.GetBool(EditorPrefsKeyOverwrite, false);
             _includeInstaller = EditorPrefs.GetBool(EditorPrefsKeyIncludeInstaller, false);
             _includeBoothManagerInstaller = EditorPrefs.GetBool(EditorPrefsKeyIncludeBoothManagerInstaller, true);
@@ -70,7 +69,7 @@ namespace SamiVRCBlocksAvatar.Editor
 
             // 最後に編集していた配布フォルダを復元
             if (string.IsNullOrEmpty(_sourceFolderPath))
-                _sourceFolderPath = EditorPrefs.GetString(EditorPrefsKeySourceFolder, "");
+                _sourceFolderPath = PackageExporterSettings.SourceFolder;
 
             RestoreSourceFolderSelection();
             if (!string.IsNullOrEmpty(_sourceFolderPath) && AssetDatabase.IsValidFolder(_sourceFolderPath))
@@ -138,7 +137,7 @@ namespace SamiVRCBlocksAvatar.Editor
         void PersistSourceFolder(string path)
         {
             _sourceFolderPath = (path ?? "").Replace("\\", "/").TrimEnd('/');
-            EditorPrefs.SetString(EditorPrefsKeySourceFolder, _sourceFolderPath);
+            PackageExporterSettings.SourceFolder = _sourceFolderPath;
             RememberSourceFolder(_sourceFolderPath);
         }
 
@@ -842,8 +841,8 @@ namespace SamiVRCBlocksAvatar.Editor
                 Application.OpenURL("https://www.vn3.org/");
             if (GUILayout.Button("VN3ライセンスを編集", GUILayout.Height(22)))
             {
-                EditorPrefs.SetString(EditorPrefsKeyOutputDirectory, _outputDirectory);
-                EditorPrefs.SetString(EditorPrefsKeySourceFolder, _sourceFolderPath ?? "");
+                PackageExporterSettings.OutputDirectory = _outputDirectory;
+                PackageExporterSettings.SourceFolder = _sourceFolderPath ?? "";
                 VN3LicenseEditorWindow.Open();
             }
             EditorGUILayout.EndHorizontal();
@@ -910,18 +909,42 @@ namespace SamiVRCBlocksAvatar.Editor
 
             EditorGUILayout.Space(2);
             DrawExportPresetHistory();
-            GUI.enabled = !string.IsNullOrEmpty(_sourceFolderPath) && !string.IsNullOrEmpty(_packageName) && !string.IsNullOrEmpty(_outputDirectory);
+            GUI.enabled = !_exportQueued && !string.IsNullOrEmpty(_sourceFolderPath) && !string.IsNullOrEmpty(_packageName) && !string.IsNullOrEmpty(_outputDirectory);
             if (GUILayout.Button("エクスポート !", GUILayout.Height(30), GUILayout.ExpandWidth(true)))
-                RunExport(versionStr);
+                QueueExport(versionStr);
             GUI.enabled = true;
             EditorGUILayout.EndVertical();
             EditorGUILayout.Space(4);
         }
 
+        /// <summary>
+        /// ステージングの Refresh やダイアログでレイアウトが崩れないよう、OnGUI の外で書き出す。
+        /// </summary>
+        void QueueExport(string versionStr)
+        {
+            if (_exportQueued)
+                return;
+            _exportQueued = true;
+            EditorApplication.delayCall += () =>
+            {
+                if (this == null)
+                    return;
+                try
+                {
+                    RunExport(versionStr);
+                }
+                finally
+                {
+                    _exportQueued = false;
+                    Repaint();
+                }
+            };
+        }
+
         void RunExport(string versionStr)
         {
-            EditorPrefs.SetString(EditorPrefsKeyOutputDirectory, _outputDirectory);
-            EditorPrefs.SetString(EditorPrefsKeySourceFolder, _sourceFolderPath ?? "");
+            PackageExporterSettings.OutputDirectory = _outputDirectory;
+            PackageExporterSettings.SourceFolder = _sourceFolderPath ?? "";
             EditorPrefs.SetBool(EditorPrefsKeyOverwrite, _overwrite);
             EditorPrefs.SetBool(EditorPrefsKeyIncludeInstaller, _includeInstaller);
             EditorPrefs.SetBool(EditorPrefsKeyIncludeBoothManagerInstaller, _includeBoothManagerInstaller);

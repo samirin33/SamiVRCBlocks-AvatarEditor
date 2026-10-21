@@ -3,6 +3,7 @@ using UnityEditor;
 using UnityEditor.Animations;
 using UnityEditorInternal;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace Samirin33.AvatarEditor.Tools.Editor
 {
@@ -91,6 +92,30 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (next <= 0)
                 return null;
             return values[next - 1];
+        }
+
+        /// <summary>
+        /// 指定オブジェクトを含むアセットファイルだけを保存する（他の未保存アセットは巻き込まない）。
+        /// サブアセットを渡した場合もメインアセットのファイルを保存する。
+        /// </summary>
+        private static void SaveOwningAssets(params Object[] objects)
+        {
+            if (objects == null)
+                return;
+            var savedPaths = new HashSet<string>();
+            foreach (var o in objects)
+            {
+                if (o == null)
+                    continue;
+                var path = AssetDatabase.GetAssetPath(o);
+                if (string.IsNullOrEmpty(path) || !savedPaths.Add(path))
+                    continue;
+                var main = AssetDatabase.LoadMainAssetAtPath(path);
+                if (main == null)
+                    continue;
+                EditorUtility.SetDirty(main);
+                AssetDatabase.SaveAssetIfDirty(main);
+            }
         }
 
         private static string GetNestedLastSegment(string s)

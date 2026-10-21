@@ -57,29 +57,7 @@ namespace SamiVRCBlocksAvatar.Editor
             public bool IsValid => Owner != null;
         }
 
-        public static Type FindType(string fullName)
-        {
-            if (string.IsNullOrEmpty(fullName))
-                return null;
-
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                Type type = null;
-                try
-                {
-                    type = assembly.GetType(fullName, false);
-                }
-                catch
-                {
-                    // ignored
-                }
-
-                if (type != null)
-                    return type;
-            }
-
-            return null;
-        }
+        public static Type FindType(string fullName) => ReflectionUtil.FindType(fullName);
 
         public static Type MaMenuItemType =>
             FindType("nadena.dev.modular_avatar.core.ModularAvatarMenuItem");

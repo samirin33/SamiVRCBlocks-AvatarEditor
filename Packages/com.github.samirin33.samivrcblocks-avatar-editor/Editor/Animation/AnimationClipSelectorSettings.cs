@@ -1,7 +1,9 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEditor;
+using UnityEditorInternal;
 using UnityEngine;
 
 namespace Samirin33.SamirinVRCUtility.AvatarEditor
@@ -31,17 +33,97 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
     }
 
     /// <summary>
-    /// Animation Clip Selector の表示設定とAnimator毎の最後に表示したクリップを保存するアセット。
+    /// Animation Clip Selector の表示設定とAnimator毎の最後に表示したクリップ。
+    /// 個人の UI 状態なので UserSettings/ 配下（VCS・配布物の対象外）に保存する。取得は <see cref="instance"/> のみ。
+    /// <para>
+    /// ScriptableSingleton と同じ保存方式だが、旧設定アセット（同じスクリプトを参照）を移行のために読み込むと
+    /// ScriptableSingleton のコンストラクタがインスタンスを奪う／エラーを出すため、自前で管理している。
+    /// </para>
     /// </summary>
     public class AnimationClipSelectorSettings : ScriptableObject
     {
+        private const string UserSettingsFilePath = "UserSettings/SamiVRCBlocks/AnimationClipSelectorSettings.asset";
+        internal const string LegacyAssetPath = "Assets/SamiVRCBlocksAvatar/Editor/AnimationClipSelectorSettings.asset";
+
+        private static AnimationClipSelectorSettings _instance;
+
         [SerializeField] private float _itemSpacing = 2f;
-        [SerializeField] private bool _showBlendTreeNested = true;
+        [SerializeField] private bool _showBlendTreeNested = false;
         [SerializeField] private List<ControllerClipEntry> _lastDisplayedClipPerController = new List<ControllerClipEntry>();
         [SerializeField] private List<AnimationClip> _ignoreClips = new List<AnimationClip>();
         [SerializeField] private List<string> _defaultIgnoreGUIDs = new List<string> { "4de039275b65be24c8f0a641d7a44924" };
         [SerializeField] private List<IgnoredConflictEntry> _ignoredConflicts = new List<IgnoredConflictEntry>();
         [SerializeField] private List<ControllerFoldoutStateEntry> _foldoutStates = new List<ControllerFoldoutStateEntry>();
+
+        public static AnimationClipSelectorSettings instance
+        {
+            get
+            {
+                if (_instance == null)
+                    _instance = FindLoadedInstance() ?? LoadOrCreate();
+                return _instance;
+            }
+        }
+
+        /// <summary>UserSettings/ のファイルへ書き出す。</summary>
+        public void Save()
+        {
+            var directory = Path.GetDirectoryName(UserSettingsFilePath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+            InternalEditorUtility.SaveToSerializedFileAndForget(new UnityEngine.Object[] { this }, UserSettingsFilePath, true);
+        }
+
+        // HideAndDontSave のインスタンスはドメインリロード後も残るため、static 参照が消えても再利用する
+        private static AnimationClipSelectorSettings FindLoadedInstance()
+        {
+            foreach (var settings in Resources.FindObjectsOfTypeAll<AnimationClipSelectorSettings>())
+            {
+                if (settings != null && !EditorUtility.IsPersistent(settings))
+                    return settings;
+            }
+            return null;
+        }
+
+        private static AnimationClipSelectorSettings LoadOrCreate()
+        {
+            AnimationClipSelectorSettings settings = null;
+            if (File.Exists(UserSettingsFilePath))
+            {
+                foreach (var obj in InternalEditorUtility.LoadSerializedFileAndForget(UserSettingsFilePath))
+                {
+                    if (obj is AnimationClipSelectorSettings loaded)
+                    {
+                        settings = loaded;
+                        break;
+                    }
+                }
+            }
+
+            if (settings != null)
+            {
+                settings.hideFlags = HideFlags.HideAndDontSave;
+                return settings;
+            }
+
+            settings = CreateInstance<AnimationClipSelectorSettings>();
+            var legacy = AssetDatabase.LoadAssetAtPath<AnimationClipSelectorSettings>(LegacyAssetPath);
+            if (legacy != null)
+                EditorUtility.CopySerialized(legacy, settings);
+            settings.hideFlags = HideFlags.HideAndDontSave;
+            settings.name = nameof(AnimationClipSelectorSettings);
+            settings.Save();
+
+            if (legacy != null)
+            {
+                Debug.Log(
+                    $"[AnimationClipSelector] 設定を {LegacyAssetPath} から {UserSettingsFilePath} へ移行しました。" +
+                    "旧アセットはもう使われないため、不要なら削除できます。",
+                    legacy);
+            }
+
+            return settings;
+        }
 
         public float ItemSpacing
         {

@@ -135,8 +135,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (ctx == null || ctx.controller == null || ctx.parentStateMachine == null || ctx.selectedState == null)
                 return;
 
-            Undo.RegisterCompleteObjectUndo(ctx.controller, "Set SubStateMachine Default State");
-
             var states = ctx.parentStateMachine.states;
             var selectedIndex = -1;
             for (var i = 0; i < states.Length; i++)
@@ -150,6 +148,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
             if (selectedIndex < 0)
                 return;
+
+            Undo.RecordObject(ctx.parentStateMachine, "Set SubStateMachine Default State");
 
             if (selectedIndex > 0)
             {
@@ -167,8 +167,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             }
 
             ctx.parentStateMachine.defaultState = ctx.selectedState;
-            EditorUtility.SetDirty(ctx.controller);
-            AssetDatabase.SaveAssets();
+            SaveOwningAssets(ctx.controller);
             RefreshSelection();
             Repaint();
             InternalEditorUtility.RepaintAllViews();

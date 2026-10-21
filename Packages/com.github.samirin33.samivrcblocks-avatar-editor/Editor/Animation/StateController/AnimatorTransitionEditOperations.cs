@@ -224,11 +224,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     return false;
                 if (t is not AnimatorTransition at)
                     return false;
-                var list = new System.Collections.Generic.List<AnimatorTransition>(
-                    loc.StateMachine.GetStateMachineTransitions(loc.SourceStateMachine));
-                if (!list.Remove(at))
+                if (!loc.StateMachine.RemoveStateMachineTransition(loc.SourceStateMachine, at))
                     return false;
-                loc.StateMachine.SetStateMachineTransitions(loc.SourceStateMachine, list.ToArray());
                 EditorUtility.SetDirty(controller);
                 return true;
             }
@@ -512,7 +509,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         }
 
         /// <summary>
-        /// 同一ステート上の選択トランジションを、指定順で削除・再作成し設定を復元する（配列順を確実に反映する）。
+        /// 同一ステート上の選択トランジションを、指定順に並べ替える（選択外の要素は元の位置のまま）。
+        /// トランジションは作り直さず、所有者の配列だけを差し替える。
         /// </summary>
         public static bool TryRebuildStateTransitionOrder(
             AnimatorState state,
@@ -525,50 +523,17 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (state == null || controller == null || userOrderedSelection == null || userOrderedSelection.Count < 2)
                 return false;
 
-            var original = state.transitions.ToArray().ToList();
-            var selectedIds = new HashSet<int>(userOrderedSelection.Select(t => t.GetInstanceID()));
-            var k = userOrderedSelection.Count;
+            if (!TryBuildReorderedArray(state.transitions, userOrderedSelection, out var reordered))
+                return false;
 
-            var snapshots = new (TransitionSettings settings, TransitionTopology topo)[k];
-            for (var i = 0; i < k; i++)
-            {
-                var t = userOrderedSelection[i];
-                var loc = FindTransitionLocation(t, controller);
-                if (loc == null || loc.SourceState != state || loc.IsEntry || loc.IsAnyState)
-                    return false;
-                snapshots[i] = (Capture(t), BuildTopology(t, loc));
-            }
-
-            // Add* の呼び出し順を末尾→先頭にし、一時的に末尾へ積まれる順序を制御する（created[i] は UI 順のまま）
-            var created = new AnimatorStateTransition[k];
-            for (var i = k - 1; i >= 0; i--)
-            {
-                var neu = CreateTransitionFromTopology(snapshots[i].topo) as AnimatorStateTransition;
-                if (neu == null) return false;
-                ApplyOverwrite(neu, snapshots[i].settings);
-                created[i] = neu;
-            }
-
-            var built = new List<AnimatorStateTransition>(original.Count);
-            var ci = 0;
-            foreach (var tr in original)
-            {
-                if (tr != null && selectedIds.Contains(tr.GetInstanceID()))
-                    built.Add(created[ci++]);
-                else
-                    built.Add(tr);
-            }
-
-            if (ci != k) return false;
-
-            Undo.RegisterCompleteObjectUndo(controller, undoLabel);
-            state.transitions = built.ToArray();
-            recreatedInUserOrder = Array.ConvertAll(created, x => (AnimatorTransitionBase)x);
+            Undo.RecordObject(state, undoLabel);
+            state.transitions = reordered;
+            recreatedInUserOrder = ToBaseArray(userOrderedSelection);
             return true;
         }
 
         /// <summary>
-        /// 同一ステートマシンの Any State 上の選択トランジションを再構築する。
+        /// 同一ステートマシンの Any State 上の選択トランジションを並べ替える。
         /// </summary>
         public static bool TryRebuildAnyStateTransitionOrder(
             AnimatorStateMachine stateMachine,
@@ -581,49 +546,17 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (stateMachine == null || controller == null || userOrderedSelection == null || userOrderedSelection.Count < 2)
                 return false;
 
-            var original = stateMachine.anyStateTransitions.ToArray().ToList();
-            var selectedIds = new HashSet<int>(userOrderedSelection.Select(t => t.GetInstanceID()));
-            var k = userOrderedSelection.Count;
+            if (!TryBuildReorderedArray(stateMachine.anyStateTransitions, userOrderedSelection, out var reordered))
+                return false;
 
-            var snapshots = new (TransitionSettings settings, TransitionTopology topo)[k];
-            for (var i = 0; i < k; i++)
-            {
-                var t = userOrderedSelection[i];
-                var loc = FindTransitionLocation(t, controller);
-                if (loc == null || loc.StateMachine != stateMachine || !loc.IsAnyState)
-                    return false;
-                snapshots[i] = (Capture(t), BuildTopology(t, loc));
-            }
-
-            var created = new AnimatorStateTransition[k];
-            for (var i = k - 1; i >= 0; i--)
-            {
-                var neu = CreateTransitionFromTopology(snapshots[i].topo) as AnimatorStateTransition;
-                if (neu == null) return false;
-                ApplyOverwrite(neu, snapshots[i].settings);
-                created[i] = neu;
-            }
-
-            var built = new List<AnimatorStateTransition>(original.Count);
-            var ci = 0;
-            foreach (var tr in original)
-            {
-                if (tr != null && selectedIds.Contains(tr.GetInstanceID()))
-                    built.Add(created[ci++]);
-                else
-                    built.Add(tr);
-            }
-
-            if (ci != k) return false;
-
-            Undo.RegisterCompleteObjectUndo(controller, undoLabel);
-            stateMachine.anyStateTransitions = built.ToArray();
-            recreatedInUserOrder = Array.ConvertAll(created, x => (AnimatorTransitionBase)x);
+            Undo.RecordObject(stateMachine, undoLabel);
+            stateMachine.anyStateTransitions = reordered;
+            recreatedInUserOrder = ToBaseArray(userOrderedSelection);
             return true;
         }
 
         /// <summary>
-        /// 同一ステートマシンの Entry 上の選択トランジションを再構築する。
+        /// 同一ステートマシンの Entry 上の選択トランジションを並べ替える。
         /// </summary>
         public static bool TryRebuildEntryTransitionOrder(
             AnimatorStateMachine stateMachine,
@@ -636,50 +569,17 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (stateMachine == null || controller == null || userOrderedSelection == null || userOrderedSelection.Count < 2)
                 return false;
 
-            var original = stateMachine.entryTransitions.ToArray().ToList();
-            var selectedIds = new HashSet<int>(userOrderedSelection.Select(t => t.GetInstanceID()));
-            var k = userOrderedSelection.Count;
+            if (!TryBuildReorderedArray(stateMachine.entryTransitions, userOrderedSelection, out var reordered))
+                return false;
 
-            var snapshots = new (TransitionSettings settings, TransitionTopology topo)[k];
-            for (var i = 0; i < k; i++)
-            {
-                var t = userOrderedSelection[i];
-                var loc = FindTransitionLocation(t, controller);
-                if (loc == null || loc.StateMachine != stateMachine || !loc.IsEntry)
-                    return false;
-                snapshots[i] = (Capture(t), BuildTopology(t, loc));
-            }
-
-            var created = new AnimatorTransition[k];
-            for (var i = k - 1; i >= 0; i--)
-            {
-                var neu = CreateTransitionFromTopology(snapshots[i].topo);
-                if (neu is not AnimatorTransition at)
-                    return false;
-                ApplyOverwrite(at, snapshots[i].settings);
-                created[i] = at;
-            }
-
-            var built = new List<AnimatorTransition>(original.Count);
-            var ci = 0;
-            foreach (var tr in original)
-            {
-                if (tr != null && selectedIds.Contains(tr.GetInstanceID()))
-                    built.Add(created[ci++]);
-                else
-                    built.Add(tr);
-            }
-
-            if (ci != k) return false;
-
-            Undo.RegisterCompleteObjectUndo(controller, undoLabel);
-            stateMachine.entryTransitions = built.ToArray();
-            recreatedInUserOrder = Array.ConvertAll(created, x => (AnimatorTransitionBase)x);
+            Undo.RecordObject(stateMachine, undoLabel);
+            stateMachine.entryTransitions = reordered;
+            recreatedInUserOrder = ToBaseArray(userOrderedSelection);
             return true;
         }
 
         /// <summary>
-        /// 同一の子サブステート（StateMachine ブロック）を起点にした遷移配列を再構築する。
+        /// 同一の子サブステート（StateMachine ブロック）を起点にした遷移を並べ替える。
         /// </summary>
         public static bool TryRebuildStateMachineNodeTransitionOrder(
             AnimatorStateMachine parentStateMachine,
@@ -694,48 +594,66 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 userOrderedSelection == null || userOrderedSelection.Count < 2)
                 return false;
 
-            var original = new List<AnimatorTransition>(
-                parentStateMachine.GetStateMachineTransitions(sourceStateMachineNode));
-            var selectedIds = new HashSet<int>(userOrderedSelection.Select(t => t.GetInstanceID()));
-            var k = userOrderedSelection.Count;
+            var original = parentStateMachine.GetStateMachineTransitions(sourceStateMachineNode);
+            if (!TryBuildReorderedArray(original, userOrderedSelection, out var reordered))
+                return false;
 
-            var snapshots = new (TransitionSettings settings, TransitionTopology topo)[k];
-            for (var i = 0; i < k; i++)
-            {
-                var t = userOrderedSelection[i];
-                var loc = FindTransitionLocation(t, controller);
-                if (loc == null || !loc.IsStateMachineNode || loc.StateMachine != parentStateMachine ||
-                    loc.SourceStateMachine != sourceStateMachineNode)
-                    return false;
-                snapshots[i] = (Capture(t), BuildTopology(t, loc));
-            }
-
-            var created = new AnimatorTransition[k];
-            for (var i = k - 1; i >= 0; i--)
-            {
-                var neu = CreateTransitionFromTopology(snapshots[i].topo);
-                if (neu is not AnimatorTransition at)
-                    return false;
-                ApplyOverwrite(at, snapshots[i].settings);
-                created[i] = at;
-            }
-
-            var built = new List<AnimatorTransition>(original.Count);
-            var ci = 0;
-            foreach (var tr in original)
-            {
-                if (tr != null && selectedIds.Contains(tr.GetInstanceID()))
-                    built.Add(created[ci++]);
-                else
-                    built.Add(tr);
-            }
-
-            if (ci != k) return false;
-
-            Undo.RegisterCompleteObjectUndo(controller, undoLabel);
-            parentStateMachine.SetStateMachineTransitions(sourceStateMachineNode, built.ToArray());
-            recreatedInUserOrder = Array.ConvertAll(created, x => (AnimatorTransitionBase)x);
+            Undo.RecordObject(parentStateMachine, undoLabel);
+            parentStateMachine.SetStateMachineTransitions(sourceStateMachineNode, reordered);
+            recreatedInUserOrder = ToBaseArray(userOrderedSelection);
             return true;
+        }
+
+        /// <summary>
+        /// <paramref name="original"/> 内で選択要素が占めていた位置に、選択要素をユーザー指定順で詰め直した配列を作る。
+        /// 選択要素がすべて <paramref name="original"/> に 1 回ずつ含まれていない場合は失敗する。
+        /// </summary>
+        private static bool TryBuildReorderedArray<T>(
+            IReadOnlyList<T> original,
+            IReadOnlyList<T> userOrderedSelection,
+            out T[] reordered) where T : AnimatorTransitionBase
+        {
+            reordered = null;
+            if (original == null || userOrderedSelection == null)
+                return false;
+
+            var selectedIds = new HashSet<int>();
+            foreach (var t in userOrderedSelection)
+            {
+                if (t == null || !selectedIds.Add(t.GetInstanceID()))
+                    return false;
+            }
+
+            var result = new T[original.Count];
+            var ci = 0;
+            for (var i = 0; i < original.Count; i++)
+            {
+                var tr = original[i];
+                if (tr != null && selectedIds.Contains(tr.GetInstanceID()))
+                {
+                    if (ci >= userOrderedSelection.Count)
+                        return false;
+                    result[i] = userOrderedSelection[ci++];
+                }
+                else
+                {
+                    result[i] = tr;
+                }
+            }
+
+            if (ci != userOrderedSelection.Count)
+                return false;
+
+            reordered = result;
+            return true;
+        }
+
+        private static AnimatorTransitionBase[] ToBaseArray<T>(IReadOnlyList<T> items) where T : AnimatorTransitionBase
+        {
+            var arr = new AnimatorTransitionBase[items.Count];
+            for (var i = 0; i < items.Count; i++)
+                arr[i] = items[i];
+            return arr;
         }
     }
 }

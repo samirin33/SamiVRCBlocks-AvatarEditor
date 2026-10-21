@@ -93,11 +93,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
         private ReorderableList _reorderIncoming;
         private Vector2 _scroll;
 
-        private bool _foldoutClipboardPanel = false;
-        private readonly List<bool> _clipboardSlotFold = new List<bool>();
-        private readonly List<bool> _clipboardSlotFoldBlend = new List<bool>();
-        private readonly List<bool> _clipboardSlotFoldConditions = new List<bool>();
-
         private enum FocusedListBucket
         {
             None,
@@ -231,7 +226,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             SamirinEditorStyleHelper.DrawWithBlueBackground(() =>
             {
                 EditorGUILayout.BeginVertical(GUILayout.ExpandHeight(true));
-                DrawToolbar();
 
                 _scroll = EditorGUILayout.BeginScrollView(_scroll, GUILayout.ExpandHeight(true));
                 DrawMainContent();
@@ -241,36 +235,9 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             }, new Rect(0, 0, position.width, position.height));
         }
 
-        private void DrawToolbar()
-        {
-            // using (new EditorGUILayout.HorizontalScope())
-            // {
-            //     if (GUILayout.Button("選択を再読み込み", GUILayout.Width(160f)))
-            //         RefreshSelection();
-
-            //     GUILayout.Space(8f);
-            //     EditorGUILayout.LabelField("表示", GUILayout.Width(32f));
-            //     TogglePanel(ref _visiblePanels, PanelVisibility.TransitionList, "一覧", 52f);
-            //     TogglePanel(ref _visiblePanels, PanelVisibility.SettingsAndConditions, "設定・条件", 88f);
-            //     TogglePanel(ref _visiblePanels, PanelVisibility.Clipboard, "クリップボード", 100f);
-
-            //     GUILayout.FlexibleSpace();
-            // }
-
-            // EditorGUILayout.Space(6f);
-        }
-
         private void DrawMainContent()
         {
             ApplyPendingTransitionRowSelectionOnLayout();
-
-            // var showList = (_visiblePanels & PanelVisibility.TransitionList) != 0;
-            // var showSettings = (_visiblePanels & PanelVisibility.SettingsAndConditions) != 0;
-            // var showClip = (_visiblePanels & PanelVisibility.Clipboard) != 0;
-
-            var showList = true;
-            var showSettings = true;
-            var showClip = false;
 
             DrawSetSubStateDefaultButtonIfNeeded();
             DrawSelectedStateEditor();
@@ -282,41 +249,26 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             if (!hideTransitionListPanel)
             {
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
-                if (showList)
+                if (_outgoing.Count == 0 && _incoming.Count == 0)
                 {
-                    if (_outgoing.Count == 0 && _incoming.Count == 0)
-                    {
-                        HelpBoxFullWidth(
-                            "トランジション、またはステートを選択してください。",
-                            MessageType.Info);
-                    }
-                    else
-                    {
-                        var outgoingTitle = IsSelectionTransitionOnly() ? "選択トランジション" : "外向きトランジション";
-                        DrawEdgeSection(outgoingTitle, _outgoing, ref _reorderOutgoing, true);
-                        DrawEdgeSection("内向きトランジション", _incoming, ref _reorderIncoming, false);
-                    }
+                    HelpBoxFullWidth(
+                        "トランジション、またはステートを選択してください。",
+                        MessageType.Info);
+                }
+                else
+                {
+                    var outgoingTitle = IsSelectionTransitionOnly() ? "選択トランジション" : "外向きトランジション";
+                    DrawEdgeSection(outgoingTitle, _outgoing, ref _reorderOutgoing, true);
+                    DrawEdgeSection("内向きトランジション", _incoming, ref _reorderIncoming, false);
                 }
 
-                if (showSettings)
-                {
-                    DrawTransitionSettingsEditor();
-                    if (showClip)
-                        EditorGUILayout.Space(10f);
-                }
+                DrawTransitionSettingsEditor();
                 EditorGUILayout.EndVertical();
             }
 
             ReleasePendingTransitionTextFocus();
 
             DrawSelectedStateBehaviourSection();
-
-            if (showClip)
-            {
-                if (showList || showSettings)
-                    EditorGUILayout.Space(12f);
-                DrawClipboardSummary();
-            }
         }
 
         private static bool ShouldHideTransitionListPanelForSelection()

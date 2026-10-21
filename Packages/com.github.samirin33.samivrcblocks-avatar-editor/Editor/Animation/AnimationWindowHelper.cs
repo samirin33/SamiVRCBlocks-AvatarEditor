@@ -33,10 +33,9 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                 return false;
 
             var stateType = state.GetType();
-            var rootProp = stateType.GetProperty("activeRootGameObject", Flags);
-            var clipProp = stateType.GetProperty("activeAnimationClip", Flags);
-            activeRoot = rootProp?.GetValue(state) as GameObject;
-            activeAnimationClip = clipProp?.GetValue(state) as AnimationClip;
+            TryGetStateValue(state, stateType, "activeRootGameObject", out activeRoot);
+            if (!TryGetStateValue(state, stateType, "activeAnimationClip", out activeAnimationClip) && window is AnimationWindow publicWindow)
+                activeAnimationClip = publicWindow.animationClip;
             return true;
         }
 
@@ -55,10 +54,9 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                 return false;
 
             var stateType = state.GetType();
-            var rootProp = stateType.GetProperty("activeRootGameObject", Flags);
-            var clipProp = stateType.GetProperty("activeAnimationClip", Flags);
-            activeRoot = rootProp?.GetValue(state) as GameObject;
-            activeAnimationClip = clipProp?.GetValue(state) as AnimationClip;
+            TryGetStateValue(state, stateType, "activeRootGameObject", out activeRoot);
+            if (!TryGetStateValue(state, stateType, "activeAnimationClip", out activeAnimationClip) && window is AnimationWindow publicWindow)
+                activeAnimationClip = publicWindow.animationClip;
             if (activeAnimationClip == null) return false;
             if (!AnimationWindowReflection.TryGetStateTime(state, out time)) time = 0f;
             return true;
@@ -76,8 +74,11 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             var wasRecording = GetAnimationWindowBool(window, t, "recording");
             var wasPlaying = GetAnimationWindowBool(window, t, "playing");
 
-            var clipProp = t.GetProperty("animationClip", Flags);
-            clipProp?.SetValue(window, clip);
+            if (!TrySetAnimationWindowClipByReflection(window, t, clip) && window is AnimationWindow publicWindow)
+            {
+                try { publicWindow.animationClip = clip; }
+                catch (Exception e) { Debug.LogWarning($"[AnimationWindowHelper] Animation ウィンドウのクリップを切り替えられませんでした: {e.Message}"); }
+            }
 
             EditorApplication.delayCall += () =>
             {
@@ -88,6 +89,37 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                 if (wasRecording) SetAnimationWindowBool(w, wt, "recording", true);
                 if (wasPlaying) SetAnimationWindowBool(w, wt, "playing", true);
             };
+        }
+
+        private static bool TrySetAnimationWindowClipByReflection(EditorWindow window, Type t, AnimationClip clip)
+        {
+            var clipProp = t.GetProperty("animationClip", Flags);
+            if (clipProp == null || !clipProp.CanWrite) return false;
+            try
+            {
+                clipProp.SetValue(window, clip);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryGetStateValue<T>(object state, Type stateType, string propName, out T value) where T : class
+        {
+            value = null;
+            var prop = stateType.GetProperty(propName, Flags);
+            if (prop == null) return false;
+            try
+            {
+                value = prop.GetValue(state) as T;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool GetAnimationWindowBool(EditorWindow window, Type t, string propName)

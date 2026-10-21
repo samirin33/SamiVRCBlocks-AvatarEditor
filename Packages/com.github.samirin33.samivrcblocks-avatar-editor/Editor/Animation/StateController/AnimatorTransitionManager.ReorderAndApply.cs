@@ -72,11 +72,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 }
             }
 
-            foreach (var controller in touchedControllers)
-                EditorUtility.SetDirty(controller);
-
             if (touchedControllers.Count > 0)
-                AssetDatabase.SaveAssets();
+                SaveOwningAssets(touchedControllers.Cast<Object>().ToArray());
 
             if (selectionAfter.Count > 0)
             {

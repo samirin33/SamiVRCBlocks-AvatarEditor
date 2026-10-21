@@ -11,6 +11,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
     /// <summary>
     /// 画像アセットのリサイズ・形式変換・圧縮を行うエディタウィンドウ。
     /// 複数選択時は一括設定しつつ、必要に応じて個別調整できます。
+    /// 画素はインポート済みテクスチャではなく元ファイル（PNG / JPG）から読む。インポート設定の最大サイズや圧縮、
+    /// 色空間変換で劣化した画素を元ファイルへ書き戻さないため。ノーマルマップ・sRGB オフ・PNG/JPG 以外は対象外。
     /// </summary>
     public class ImageCompressor : EditorWindow
     {
@@ -46,6 +48,9 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             public int originalWidth;
             public int originalHeight;
             public string originalExtension;
+            public bool sourceHasAlpha;
+            /// <summary>null 以外なら処理対象外。理由を表示する。</summary>
+            public string skipReason;
 
             public long resultBytes = -1;
             public long bytesBeforeProcess;
@@ -60,8 +65,11 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
         static readonly string[] ImageExtensions =
         {
-            ".png", ".jpg", ".jpeg", ".tga", ".tif", ".tiff", ".bmp", ".exr", ".gif"
+            ".png", ".jpg", ".jpeg", ".tga", ".tif", ".tiff", ".bmp", ".exr", ".gif", ".psd", ".hdr"
         };
+
+        /// <summary>Texture2D.LoadImage で元ファイルを劣化なく読める形式。</summary>
+        static readonly string[] ProcessableExtensions = { ".png", ".jpg", ".jpeg" };
 
         static readonly string[] FormatLabels = { "元の形式を維持", "PNG", "JPG" };
         static readonly string[] SaveModeLabels = { "上書き", "コピーとして保存" };
@@ -261,7 +269,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("すべて有効", GUILayout.Height(20)))
-                foreach (var e in _entries) e.enabled = true;
+                foreach (var e in _entries) e.enabled = string.IsNullOrEmpty(e.skipReason);
             if (GUILayout.Button("すべて無効", GUILayout.Height(20)))
                 foreach (var e in _entries) e.enabled = false;
             if (GUILayout.Button("無効を削除", GUILayout.Height(20)))
@@ -309,6 +317,13 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
             if (!string.IsNullOrEmpty(entry.assetPath))
                 EditorGUILayout.LabelField(entry.assetPath, EditorStyles.miniLabel);
+
+            if (!string.IsNullOrEmpty(entry.skipReason))
+                EditorGUILayout.HelpBox("対象外: " + entry.skipReason, MessageType.Warning);
+            else if (WillDropAlpha(entry))
+                EditorGUILayout.HelpBox(
+                    "アルファ（透明部分）を含む可能性があります。JPG はアルファを保存できないため、透明部分がある場合は処理しません。PNG を選んでください。",
+                    MessageType.Warning);
 
             if (entry.foldout)
             {
@@ -375,25 +390,50 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             GUI.enabled = enabled;
             if (GUILayout.Button("圧縮・変換を実行", GUILayout.Height(30), GUILayout.ExpandWidth(true)))
             {
-                if (_saveMode == SaveMode.Overwrite)
-                {
-                    if (!EditorUtility.DisplayDialog(
-                            "Image Compressor",
-                            $"有効な {_entries.Count(e => e.enabled)} 件を上書きします。よろしいですか？\n（Undo はできません）",
-                            "実行",
-                            "キャンセル"))
-                    {
-                        GUI.enabled = true;
-                        return;
-                    }
-                }
-
-                ProcessAll();
+                // 確認ダイアログとアセット書き換えはレイアウト途中で行わない。
+                EditorApplication.delayCall += ConfirmAndProcessAll;
             }
             GUI.enabled = true;
 
             if (!enabled)
                 EditorGUILayout.HelpBox("有効な画像がありません。", MessageType.Warning);
+        }
+
+        void ConfirmAndProcessAll()
+        {
+            if (this == null)
+                return;
+
+            var targets = _entries.Where(e => e.enabled).ToList();
+            var processable = targets.Where(e => string.IsNullOrEmpty(e.skipReason)).ToList();
+            var skipped = targets.Count - processable.Count;
+            if (processable.Count == 0)
+            {
+                EditorUtility.DisplayDialog(
+                    "Image Compressor",
+                    "処理できる画像がありません。\n（PNG / JPG 以外、ノーマルマップ、sRGB オフのテクスチャは対象外です）",
+                    "OK");
+                return;
+            }
+
+            if (_saveMode == SaveMode.Overwrite)
+            {
+                var message = $"有効な {processable.Count} 件を上書きします。よろしいですか？\n（Undo はできません）";
+                var renamed = processable.Count(e => !string.Equals(
+                    ResolveOutputExtension(e), e.originalExtension, StringComparison.OrdinalIgnoreCase));
+                if (renamed > 0)
+                    message += $"\n\n{renamed} 件は拡張子が変わります（元の形式のファイルは残りません。参照は維持されます）。";
+                var alpha = processable.Count(WillDropAlpha);
+                if (alpha > 0)
+                    message += $"\n\n{alpha} 件はアルファを含む可能性があります。透明部分があるものは JPG にせずスキップします。";
+                if (skipped > 0)
+                    message += $"\n\n対象外の {skipped} 件はスキップします。";
+
+                if (!EditorUtility.DisplayDialog("Image Compressor", message, "実行", "キャンセル"))
+                    return;
+            }
+
+            ProcessAll();
         }
 
         void DrawResultSummary()
@@ -558,13 +598,72 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 assetPath = assetPath,
                 texture = tex,
                 originalBytes = bytes,
-                originalWidth = tex.width,
-                originalHeight = tex.height,
                 originalExtension = Path.GetExtension(assetPath)?.ToLowerInvariant() ?? "",
             };
+            RefreshSourceInfo(entry);
             ApplyBatchToEntry(entry);
+            if (!string.IsNullOrEmpty(entry.skipReason))
+                entry.enabled = false;
             _entries.Add(entry);
             _hasResultSummary = false;
+        }
+
+        /// <summary>
+        /// 元ファイルの寸法・アルファ有無と、対象外かどうかを importer から取り直す。
+        /// texture.width はインポート時の最大サイズで縮んでいることがあるため使わない。
+        /// </summary>
+        static void RefreshSourceInfo(ImageEntry entry)
+        {
+            var importer = AssetImporter.GetAtPath(entry.assetPath) as TextureImporter;
+            if (importer != null)
+            {
+                importer.GetSourceTextureWidthAndHeight(out var w, out var h);
+                entry.originalWidth = w;
+                entry.originalHeight = h;
+                entry.sourceHasAlpha = importer.DoesSourceTextureHaveAlpha();
+            }
+            else if (entry.texture != null)
+            {
+                entry.originalWidth = entry.texture.width;
+                entry.originalHeight = entry.texture.height;
+                entry.sourceHasAlpha = true;
+            }
+
+            entry.skipReason = GetSkipReason(entry.assetPath, importer);
+        }
+
+        static string GetSkipReason(string assetPath, TextureImporter importer)
+        {
+            var ext = Path.GetExtension(assetPath)?.ToLowerInvariant() ?? "";
+            if (!ProcessableExtensions.Contains(ext))
+                return $"{ext} は元データを劣化なく読み書きできないため処理しません（PNG / JPG のみ対応）。";
+            if (importer == null)
+                return "TextureImporter を取得できません。";
+            if (importer.textureType == TextureImporterType.NormalMap)
+                return "ノーマルマップは縮小・再圧縮で法線が崩れるため処理しません。";
+            if (!importer.sRGBTexture)
+                return "sRGB がオフ（マスク・データ用）のテクスチャは値が変わると表示が崩れるため処理しません。";
+            return null;
+        }
+
+        static bool WillDropAlpha(ImageEntry entry)
+        {
+            return entry.sourceHasAlpha &&
+                   string.IsNullOrEmpty(entry.skipReason) &&
+                   IsJpegExtension(ResolveOutputExtension(entry));
+        }
+
+        static string ResolveOutputExtension(ImageEntry entry)
+        {
+            switch (entry.format)
+            {
+                case OutputFormat.JPG: return ".jpg";
+                case OutputFormat.PNG: return ".png";
+                default:
+                    if (IsJpegExtension(entry.originalExtension))
+                        return entry.originalExtension == ".jpeg" ? ".jpeg" : ".jpg";
+                    return ".png";
+            }
         }
 
         void ProcessAll()
@@ -577,6 +676,11 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             var targets = _entries.Where(e => e.enabled).ToList();
             if (targets.Count == 0) return;
 
+            // 処理直前に importer 設定を取り直す（追加後に設定が変わっている可能性がある）。
+            foreach (var entry in targets)
+                RefreshSourceInfo(entry);
+
+            AssetDatabase.StartAssetEditing();
             try
             {
                 for (int i = 0; i < targets.Count; i++)
@@ -591,6 +695,9 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     entry.resultBytes = -1;
                     entry.resultPath = null;
                     entry.bytesBeforeProcess = 0;
+
+                    if (!string.IsNullOrEmpty(entry.skipReason))
+                        continue;
 
                     try
                     {
@@ -609,8 +716,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             }
             finally
             {
+                AssetDatabase.StopAssetEditing();
                 EditorUtility.ClearProgressBar();
-                AssetDatabase.Refresh();
             }
 
             _lastTotalBefore = 0;
@@ -621,16 +728,12 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     continue;
 
                 var path = string.IsNullOrEmpty(entry.resultPath) ? entry.assetPath : entry.resultPath;
-                entry.texture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-                if (entry.texture != null)
+                var resultTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                if (_saveMode == SaveMode.Overwrite)
                 {
-                    entry.resultWidth = entry.texture.width;
-                    entry.resultHeight = entry.texture.height;
-                    if (_saveMode == SaveMode.Overwrite)
-                    {
-                        entry.originalWidth = entry.texture.width;
-                        entry.originalHeight = entry.texture.height;
-                    }
+                    entry.texture = resultTexture;
+                    entry.originalWidth = entry.resultWidth;
+                    entry.originalHeight = entry.resultHeight;
                 }
 
                 var abs = ToAbsolutePath(path);
@@ -652,9 +755,11 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             Repaint();
 
             var saved = _lastTotalBefore - _lastTotalAfter;
+            var skippedCount = targets.Count(e => !string.IsNullOrEmpty(e.skipReason));
             EditorUtility.DisplayDialog(
                 "Image Compressor",
-                $"完了しました。\n成功: {_lastSuccessCount} / 失敗: {_lastFailCount}\n" +
+                $"完了しました。\n成功: {_lastSuccessCount} / 失敗: {_lastFailCount}" +
+                (skippedCount > 0 ? $" / 対象外: {skippedCount}" : "") + "\n" +
                 $"変換前: {FormatBytes(_lastTotalBefore)}\n変換後: {FormatBytes(_lastTotalAfter)}\n" +
                 $"削減: {FormatSignedBytes(-saved)} ({(_lastTotalBefore > 0 ? saved * 100.0 / _lastTotalBefore : 0):F1}%)",
                 "OK");
@@ -678,80 +783,250 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             entry.originalBytes = new FileInfo(absPath).Length;
             entry.bytesBeforeProcess = entry.originalBytes;
 
-            var source = LoadReadableTexture(entry.assetPath, out var loadError);
-            if (source == null)
+            if (!TryLoadSourcePixels(absPath, out var pixels, out var srcW, out var srcH, out var loadError))
             {
-                entry.lastError = loadError ?? "テクスチャを読み込めませんでした。";
+                entry.lastError = loadError;
                 return false;
             }
 
-            Texture2D working = source;
-            Texture2D scaled = null;
+            entry.originalWidth = srcW;
+            entry.originalHeight = srcH;
+            var hasAlpha = HasTransparentPixel(pixels);
+            var newExt = ResolveOutputExtension(entry);
+            if (hasAlpha && IsJpegExtension(newExt))
+            {
+                entry.lastError = "透明部分があるため JPG にできません（アルファが失われます）。出力形式を PNG にしてください。";
+                return false;
+            }
+
+            var (outW, outH) = PredictOutputSize(entry);
+            if (outW != srcW || outH != srcH)
+                pixels = ResizeArea(pixels, srcW, srcH, outW, outH);
+
+            var bytes = Encode(pixels, outW, outH, hasAlpha, newExt, entry.jpgQuality);
+            if (bytes == null || bytes.Length == 0)
+            {
+                entry.lastError = "エンコードに失敗しました。";
+                return false;
+            }
+
+            string destAssetPath;
+            var movedFrom = (string)null;
+            if (_saveMode == SaveMode.SaveAsCopy)
+            {
+                var suffix = string.IsNullOrEmpty(_copySuffix) ? "_compressed" : _copySuffix;
+                var dir = Path.GetDirectoryName(entry.assetPath)?.Replace("\\", "/") ?? "Assets";
+                var name = Path.GetFileNameWithoutExtension(entry.assetPath);
+                destAssetPath = GenerateUniqueDestPath(dir, name + suffix, newExt);
+            }
+            else
+            {
+                destAssetPath = entry.assetPath;
+                var currentExt = Path.GetExtension(entry.assetPath);
+                if (!string.Equals(currentExt, newExt, StringComparison.OrdinalIgnoreCase))
+                {
+                    // GUID と importer 設定を保つため MoveAsset で拡張子だけ変える（参照は切れない）。
+                    var renamed = Path.ChangeExtension(entry.assetPath, newExt).Replace("\\", "/");
+                    if (File.Exists(ToAbsolutePath(renamed)))
+                    {
+                        entry.lastError = "同名の " + newExt + " ファイルが既にあるため拡張子を変更できません: " + renamed;
+                        return false;
+                    }
+                    var moveError = AssetDatabase.MoveAsset(entry.assetPath, renamed);
+                    if (!string.IsNullOrEmpty(moveError))
+                    {
+                        entry.lastError = "拡張子変更に失敗: " + moveError;
+                        return false;
+                    }
+                    movedFrom = entry.assetPath;
+                    destAssetPath = renamed;
+                    entry.assetPath = renamed;
+                }
+            }
+
+            var destAbs = ToAbsolutePath(destAssetPath);
             try
             {
-                var (outW, outH) = PredictOutputSize(entry);
-                if (outW != source.width || outH != source.height)
-                {
-                    scaled = ResizeTexture(source, outW, outH);
-                    working = scaled;
-                }
+                Directory.CreateDirectory(Path.GetDirectoryName(destAbs) ?? ".");
+                File.WriteAllBytes(destAbs, bytes);
+            }
+            catch
+            {
+                if (movedFrom != null && string.IsNullOrEmpty(AssetDatabase.MoveAsset(destAssetPath, movedFrom)))
+                    entry.assetPath = movedFrom;
+                throw;
+            }
+            AssetDatabase.ImportAsset(destAssetPath, ImportAssetOptions.ForceUpdate);
 
-                byte[] bytes;
-                string newExt;
-                EncodeImage(working, entry, out bytes, out newExt);
+            entry.resultPath = destAssetPath;
+            entry.resultBytes = bytes.Length;
+            entry.resultWidth = outW;
+            entry.resultHeight = outH;
+            entry.lastError = null;
+            return true;
+        }
 
-                if (bytes == null || bytes.Length == 0)
+        /// <summary>
+        /// 元ファイルのバイト列を直接デコードする。16bit PNG はここで 8bit に落ちるため対象外にする。
+        /// </summary>
+        static bool TryLoadSourcePixels(string absPath, out Color32[] pixels, out int width, out int height, out string error)
+        {
+            pixels = null;
+            width = height = 0;
+            error = null;
+
+            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            try
+            {
+                if (!tex.LoadImage(File.ReadAllBytes(absPath), false))
                 {
-                    entry.lastError = "エンコードに失敗しました。";
+                    error = "画像ファイルをデコードできませんでした。";
                     return false;
                 }
 
-                string destAssetPath;
-                if (_saveMode == SaveMode.SaveAsCopy)
+                if (tex.format == TextureFormat.RGBA64 || tex.format == TextureFormat.RGB48 ||
+                    tex.format == TextureFormat.R16)
                 {
-                    var suffix = string.IsNullOrEmpty(_copySuffix) ? "_compressed" : _copySuffix;
-                    var dir = Path.GetDirectoryName(entry.assetPath)?.Replace("\\", "/") ?? "Assets";
-                    var name = Path.GetFileNameWithoutExtension(entry.assetPath);
-                    destAssetPath = $"{dir}/{name}{suffix}{newExt}";
-                    destAssetPath = AssetDatabase.GenerateUniqueAssetPath(destAssetPath);
-                }
-                else
-                {
-                    destAssetPath = entry.assetPath;
-                    var currentExt = Path.GetExtension(entry.assetPath);
-                    if (!string.Equals(currentExt, newExt, StringComparison.OrdinalIgnoreCase))
-                    {
-                        var renamed = Path.ChangeExtension(entry.assetPath, newExt).Replace("\\", "/");
-                        var moveError = AssetDatabase.MoveAsset(entry.assetPath, renamed);
-                        if (!string.IsNullOrEmpty(moveError))
-                        {
-                            entry.lastError = "拡張子変更に失敗: " + moveError;
-                            return false;
-                        }
-                        destAssetPath = renamed;
-                        entry.assetPath = renamed;
-                    }
+                    error = "16bit 画像は 8bit に変換すると階調が失われるため処理しません。";
+                    return false;
                 }
 
-                var destAbs = ToAbsolutePath(destAssetPath);
-                Directory.CreateDirectory(Path.GetDirectoryName(destAbs) ?? ".");
-                File.WriteAllBytes(destAbs, bytes);
-                AssetDatabase.ImportAsset(destAssetPath, ImportAssetOptions.ForceUpdate);
-
-                entry.resultPath = destAssetPath;
-                entry.resultBytes = bytes.Length;
-                entry.resultWidth = working.width;
-                entry.resultHeight = working.height;
-                entry.lastError = null;
+                width = tex.width;
+                height = tex.height;
+                pixels = tex.GetPixels32();
                 return true;
+            }
+            catch (Exception ex)
+            {
+                error = "画像の読み込みに失敗: " + ex.Message;
+                return false;
             }
             finally
             {
-                if (scaled != null)
-                    DestroyImmediate(scaled);
-                if (source != null)
-                    DestroyImmediate(source);
+                DestroyImmediate(tex);
             }
+        }
+
+        static bool HasTransparentPixel(Color32[] pixels)
+        {
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                if (pixels[i].a < 255)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 面積平均で縮小する。GPU の Blit と違い色空間変換が入らず、大きく縮めてもエイリアスが出にくい。
+        /// </summary>
+        static Color32[] ResizeArea(Color32[] src, int srcW, int srcH, int dstW, int dstH)
+        {
+            BuildAreaWeights(srcW, dstW, out var xStart, out var xWeights);
+            BuildAreaWeights(srcH, dstH, out var yStart, out var yWeights);
+
+            var dst = new Color32[dstW * dstH];
+            for (int dy = 0; dy < dstH; dy++)
+            {
+                var wy = yWeights[dy];
+                for (int dx = 0; dx < dstW; dx++)
+                {
+                    var wx = xWeights[dx];
+                    float r = 0f, g = 0f, b = 0f, a = 0f, total = 0f;
+                    for (int j = 0; j < wy.Length; j++)
+                    {
+                        var row = (yStart[dy] + j) * srcW + xStart[dx];
+                        for (int i = 0; i < wx.Length; i++)
+                        {
+                            var w = wx[i] * wy[j];
+                            var c = src[row + i];
+                            r += c.r * w;
+                            g += c.g * w;
+                            b += c.b * w;
+                            a += c.a * w;
+                            total += w;
+                        }
+                    }
+
+                    var inv = total > 0f ? 1f / total : 0f;
+                    dst[dy * dstW + dx] = new Color32(
+                        ToByte(r * inv), ToByte(g * inv), ToByte(b * inv), ToByte(a * inv));
+                }
+            }
+            return dst;
+        }
+
+        static void BuildAreaWeights(int srcSize, int dstSize, out int[] starts, out float[][] weights)
+        {
+            starts = new int[dstSize];
+            weights = new float[dstSize][];
+            var ratio = (double)srcSize / dstSize;
+            for (int d = 0; d < dstSize; d++)
+            {
+                var begin = d * ratio;
+                var end = Math.Min(srcSize, (d + 1) * ratio);
+                var first = Math.Min(srcSize - 1, (int)Math.Floor(begin));
+                var last = Math.Max(first, Math.Min(srcSize - 1, (int)Math.Ceiling(end) - 1));
+                var w = new float[last - first + 1];
+                for (int s = first; s <= last; s++)
+                {
+                    var overlap = Math.Min(end, s + 1) - Math.Max(begin, s);
+                    w[s - first] = (float)Math.Max(overlap, 0.0);
+                }
+                starts[d] = first;
+                weights[d] = w;
+            }
+        }
+
+        static byte ToByte(float v)
+        {
+            return (byte)Mathf.Clamp(Mathf.RoundToInt(v), 0, 255);
+        }
+
+        static byte[] Encode(Color32[] pixels, int width, int height, bool hasAlpha, string ext, int jpgQuality)
+        {
+            Texture2D tex;
+            if (hasAlpha)
+            {
+                tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
+                tex.SetPixels32(pixels);
+            }
+            else
+            {
+                // アルファ無しは RGB24 で書き、PNG に不要なアルファチャンネルを持たせない。
+                var raw = new byte[width * height * 3];
+                for (int i = 0, o = 0; i < pixels.Length; i++, o += 3)
+                {
+                    raw[o] = pixels[i].r;
+                    raw[o + 1] = pixels[i].g;
+                    raw[o + 2] = pixels[i].b;
+                }
+                tex = new Texture2D(width, height, TextureFormat.RGB24, false);
+                tex.LoadRawTextureData(raw);
+            }
+
+            try
+            {
+                tex.Apply(false, false);
+                return IsJpegExtension(ext)
+                    ? tex.EncodeToJPG(Mathf.Clamp(jpgQuality, 1, 100))
+                    : tex.EncodeToPNG();
+            }
+            finally
+            {
+                DestroyImmediate(tex);
+            }
+        }
+
+        /// <summary>
+        /// StartAssetEditing 中は書き出したばかりのファイルを AssetDatabase が知らないため、ディスクも見て重複を避ける。
+        /// </summary>
+        static string GenerateUniqueDestPath(string dir, string baseName, string ext)
+        {
+            var candidate = AssetDatabase.GenerateUniqueAssetPath($"{dir}/{baseName}{ext}");
+            for (int i = 1; File.Exists(ToAbsolutePath(candidate)); i++)
+                candidate = $"{dir}/{baseName} {i}{ext}";
+            return candidate;
         }
 
         static (int w, int h) PredictOutputSize(ImageEntry entry)
@@ -771,34 +1046,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             return (w, h);
         }
 
-        static void EncodeImage(Texture2D working, ImageEntry entry, out byte[] bytes, out string newExt)
-        {
-            switch (entry.format)
-            {
-                case OutputFormat.JPG:
-                    bytes = working.EncodeToJPG(Mathf.Clamp(entry.jpgQuality, 1, 100));
-                    newExt = ".jpg";
-                    return;
-                case OutputFormat.PNG:
-                    bytes = working.EncodeToPNG();
-                    newExt = ".png";
-                    return;
-                default:
-                    if (IsJpegExtension(entry.originalExtension))
-                    {
-                        bytes = working.EncodeToJPG(Mathf.Clamp(entry.jpgQuality, 1, 100));
-                        newExt = entry.originalExtension == ".jpeg" ? ".jpeg" : ".jpg";
-                    }
-                    else
-                    {
-                        // Unity の Encode API で安全に扱えるよう PNG へ寄せる
-                        bytes = working.EncodeToPNG();
-                        newExt = ".png";
-                    }
-                    return;
-            }
-        }
-
         static string ResolveFormatLabel(ImageEntry entry)
         {
             switch (entry.format)
@@ -812,52 +1059,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                         ? "元形式(PNG)"
                         : $"PNGへ変換 (元{entry.originalExtension})";
             }
-        }
-
-        static Texture2D LoadReadableTexture(string assetPath, out string error)
-        {
-            error = null;
-            try
-            {
-                var loaded = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
-                if (loaded == null)
-                {
-                    error = "Texture2D として読み込めません。";
-                    return null;
-                }
-
-                return CopyViaBlit(loaded, loaded.width, loaded.height);
-            }
-            catch (Exception ex)
-            {
-                error = ex.Message;
-                return null;
-            }
-        }
-
-        static Texture2D CopyViaBlit(Texture source, int width, int height)
-        {
-            var rt = RenderTexture.GetTemporary(width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default);
-            var prev = RenderTexture.active;
-            try
-            {
-                Graphics.Blit(source, rt);
-                RenderTexture.active = rt;
-                var tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
-                tex.ReadPixels(new Rect(0, 0, width, height), 0, 0);
-                tex.Apply(false, false);
-                return tex;
-            }
-            finally
-            {
-                RenderTexture.active = prev;
-                RenderTexture.ReleaseTemporary(rt);
-            }
-        }
-
-        static Texture2D ResizeTexture(Texture2D source, int width, int height)
-        {
-            return CopyViaBlit(source, width, height);
         }
 
         static bool IsImageAssetPath(string path)

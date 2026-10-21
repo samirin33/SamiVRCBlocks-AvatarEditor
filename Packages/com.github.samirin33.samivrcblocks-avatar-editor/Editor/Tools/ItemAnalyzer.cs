@@ -923,7 +923,7 @@ namespace SamiVRCBlocksAvatar.Editor
                             slots += smr.sharedMaterials?.Length ?? 0;
                             if (smr.sharedMesh != null)
                             {
-                                polys += smr.sharedMesh.triangles.Length / 3;
+                                polys += CountTriangles(smr.sharedMesh);
                                 verts += smr.sharedMesh.vertexCount;
                             }
                         }
@@ -954,7 +954,7 @@ namespace SamiVRCBlocksAvatar.Editor
                                 slots += mr.sharedMaterials?.Length ?? 0;
                             if (mf != null && mf.sharedMesh != null)
                             {
-                                polys += mf.sharedMesh.triangles.Length / 3;
+                                polys += CountTriangles(mf.sharedMesh);
                                 verts += mf.sharedMesh.vertexCount;
                             }
                         }
@@ -1022,7 +1022,7 @@ namespace SamiVRCBlocksAvatar.Editor
                 slots += smr.sharedMaterials?.Length ?? 0;
                 if (smr.sharedMesh == null)
                     continue;
-                polys += smr.sharedMesh.triangles.Length / 3;
+                polys += CountTriangles(smr.sharedMesh);
                 verts += smr.sharedMesh.vertexCount;
             }
 
@@ -1032,7 +1032,7 @@ namespace SamiVRCBlocksAvatar.Editor
                 var mf = mr.GetComponent<MeshFilter>();
                 if (mf == null || mf.sharedMesh == null)
                     continue;
-                polys += mf.sharedMesh.triangles.Length / 3;
+                polys += CountTriangles(mf.sharedMesh);
                 verts += mf.sharedMesh.vertexCount;
             }
 
@@ -1229,24 +1229,20 @@ namespace SamiVRCBlocksAvatar.Editor
             return prop?.GetValue(target);
         }
 
-        static Type FindType(string fullName)
-        {
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                Type type = null;
-                try
-                {
-                    type = assembly.GetType(fullName, false);
-                }
-                catch
-                {
-                    // ignored
-                }
+        static Type FindType(string fullName) => ReflectionUtil.FindType(fullName);
 
-                if (type != null)
-                    return type;
+        /// <summary>
+        /// mesh.triangles は全インデックス配列を毎回コピーし、ライン/ポイントのサブメッシュも数えてしまうため使わない。
+        /// </summary>
+        static int CountTriangles(Mesh mesh)
+        {
+            long count = 0;
+            for (int i = 0; i < mesh.subMeshCount; i++)
+            {
+                if (mesh.GetTopology(i) == MeshTopology.Triangles)
+                    count += mesh.GetIndexCount(i) / 3;
             }
-            return null;
+            return (int)Math.Min(count, int.MaxValue);
         }
     }
 
@@ -1360,25 +1356,7 @@ namespace SamiVRCBlocksAvatar.Editor
             return field?.GetValue(target);
         }
 
-        static Type FindType(string fullName)
-        {
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                Type type = null;
-                try
-                {
-                    type = assembly.GetType(fullName, false);
-                }
-                catch
-                {
-                    // ignored
-                }
-
-                if (type != null)
-                    return type;
-            }
-            return null;
-        }
+        static Type FindType(string fullName) => ReflectionUtil.FindType(fullName);
     }
 }
 #endif

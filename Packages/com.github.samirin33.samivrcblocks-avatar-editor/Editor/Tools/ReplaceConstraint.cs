@@ -517,44 +517,97 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         }
 
         /// <summary>
-        /// 親階層のAnimatorに含まれるAnimationClipで、置換元Constraintを制御していたバインディングを置換先にリバインドする。
+        /// 親階層のAnimatorと、VRCAvatarDescriptorのPlayable Layerに含まれるAnimationClipで、
+        /// 置換元Constraintを制御していたバインディングを置換先にリバインドする。
         /// </summary>
         private static void RebindAnimationClipsInParentAnimator(Component sourceComponent, Component targetComponent)
         {
             if (sourceComponent == null || targetComponent == null) return;
 
-            var animator = FindAnimatorInParents(sourceComponent.transform);
-            if (animator == null) return;
-
-            var controller = animator.runtimeAnimatorController;
-            if (controller == null) return;
-
-            var clips = GetAllAnimationClips(controller);
-            if (clips == null || clips.Count == 0) return;
-
-            var constraintPath = AnimationUtility.CalculateTransformPath(sourceComponent.transform, animator.transform);
             var sourceType = sourceComponent.GetType();
             var targetType = targetComponent.GetType();
+            var clipPaths = CollectClipPathsForRebind(sourceComponent.transform);
+            if (clipPaths.Count == 0) return;
 
-            int totalRebound = 0;
-            var clipsToModify = clips.Where(c => c != null).ToList();
-            if (clipsToModify.Count > 0)
-            {
-                Undo.RegisterCompleteObjectUndo(clipsToModify.ToArray(), "Replace Constraint (Animation Rebind)");
-            }
-            foreach (var clip in clipsToModify)
-            {
-                totalRebound += RebindConstraintInClip(clip, constraintPath, sourceType, targetType);
-            }
+            var clipsToModify = clipPaths
+                .Where(kv => ClipHasBinding(kv.Key, kv.Value, sourceType))
+                .ToList();
+            if (clipsToModify.Count == 0) return;
 
-            if (totalRebound > 0)
+            Undo.RegisterCompleteObjectUndo(clipsToModify.Select(kv => (UnityEngine.Object)kv.Key).ToArray(),
+                "Replace Constraint (Animation Rebind)");
+            foreach (var kv in clipsToModify)
             {
-                foreach (var clip in clipsToModify)
+                var clip = kv.Key;
+                var rebound = 0;
+                foreach (var path in kv.Value)
+                    rebound += RebindConstraintInClip(clip, path, sourceType, targetType);
+                if (rebound == 0) continue;
+
+                EditorUtility.SetDirty(clip);
+                AssetDatabase.SaveAssetIfDirty(clip);
+            }
+        }
+
+        /// <summary>
+        /// 対象Constraintへのパスを、クリップごとに重複なく集める。
+        /// アバター直下のAnimatorとDescriptorのPlayable Layerでは基準Transformが異なることがあるため、パスはコントローラーごとに計算する。
+        /// </summary>
+        private static Dictionary<AnimationClip, HashSet<string>> CollectClipPathsForRebind(Transform constraintTransform)
+        {
+            var result = new Dictionary<AnimationClip, HashSet<string>>();
+
+            void AddController(RuntimeAnimatorController controller, Transform root)
+            {
+                if (controller == null || root == null) return;
+                var path = AnimationUtility.CalculateTransformPath(constraintTransform, root);
+                foreach (var clip in GetAllAnimationClips(controller))
                 {
-                    EditorUtility.SetDirty(clip);
+                    if (clip == null) continue;
+                    if (!result.TryGetValue(clip, out var paths))
+                    {
+                        paths = new HashSet<string>();
+                        result.Add(clip, paths);
+                    }
+                    paths.Add(path);
                 }
-                AssetDatabase.SaveAssets();
             }
+
+            var animator = FindAnimatorInParents(constraintTransform);
+            if (animator != null)
+                AddController(animator.runtimeAnimatorController, animator.transform);
+
+            var descriptor = FindAvatarDescriptorInParents(constraintTransform);
+            if (descriptor != null)
+            {
+                var so = new SerializedObject(descriptor);
+                foreach (var listName in new[] { "baseAnimationLayers", "specialAnimationLayers" })
+                {
+                    var layers = so.FindProperty(listName);
+                    if (layers == null || !layers.isArray) continue;
+                    for (int i = 0; i < layers.arraySize; i++)
+                    {
+                        var controllerProp = layers.GetArrayElementAtIndex(i).FindPropertyRelative("animatorController");
+                        AddController(controllerProp?.objectReferenceValue as RuntimeAnimatorController, descriptor.transform);
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        private static Component FindAvatarDescriptorInParents(Transform transform)
+        {
+            var descriptorType = global::SamiVRCBlocksAvatar.Editor.ReflectionUtil.FindType(
+                "VRC.SDK3.Avatars.Components.VRCAvatarDescriptor");
+            if (descriptorType == null || transform == null) return null;
+            return transform.GetComponentInParent(descriptorType, true);
+        }
+
+        private static bool ClipHasBinding(AnimationClip clip, HashSet<string> paths, Type sourceType)
+        {
+            return AnimationUtility.GetCurveBindings(clip).Any(b => b.type == sourceType && paths.Contains(b.path))
+                || AnimationUtility.GetObjectReferenceCurveBindings(clip).Any(b => b.type == sourceType && paths.Contains(b.path));
         }
 
         /// <summary>

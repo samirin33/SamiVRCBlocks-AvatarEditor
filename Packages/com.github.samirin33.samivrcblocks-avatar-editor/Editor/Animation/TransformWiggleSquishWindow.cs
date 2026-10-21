@@ -47,6 +47,11 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         private MessageType _statusType = MessageType.Info;
         private bool _loaded;
         private bool _previewing;
+        private int _polledRootId;
+        private int _polledClipId;
+        private int _polledSelectedId;
+        private string _polledHierarchyPath;
+        private float _polledTime;
         private bool _previewRegistered;
         private bool _graphDirty = true;
         private bool _appliedSinceEdit;
@@ -93,7 +98,45 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
         private void OnInspectorUpdate()
         {
-            Repaint();
+            // 非プレビュー時も Animation ウィンドウの対象・再生位置に追従する表示があるため、変化したときだけ再描画する
+            if (_previewing || PollAnimationContextChanged())
+                Repaint();
+        }
+
+        private bool PollAnimationContextChanged()
+        {
+            int rootId = 0;
+            int clipId = 0;
+            string hierarchyPath = null;
+            float time = 0f;
+            if (AnimationWindowReflection.TryGetAnimationWindowState(out object state) && state != null)
+            {
+                const System.Reflection.BindingFlags flags =
+                    System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic;
+                var stateType = state.GetType();
+                var rootObject = stateType.GetProperty("activeRootGameObject", flags)?.GetValue(state) as GameObject;
+                var clip = stateType.GetProperty("activeAnimationClip", flags)?.GetValue(state) as AnimationClip;
+                rootId = rootObject != null ? rootObject.GetInstanceID() : 0;
+                clipId = clip != null ? clip.GetInstanceID() : 0;
+                AnimationWindowReflection.TryGetSelectedHierarchyPath(state, out hierarchyPath);
+                AnimationWindowReflection.TryGetStateTime(state, out time);
+            }
+
+            var selected = Selection.activeTransform;
+            int selectedId = selected != null ? selected.GetInstanceID() : 0;
+            bool changed = rootId != _polledRootId
+                || clipId != _polledClipId
+                || selectedId != _polledSelectedId
+                || hierarchyPath != _polledHierarchyPath
+                || !Mathf.Approximately(time, _polledTime);
+            _polledRootId = rootId;
+            _polledClipId = clipId;
+            _polledSelectedId = selectedId;
+            _polledHierarchyPath = hierarchyPath;
+            _polledTime = time;
+            return changed;
         }
 
         private void OnGUI()

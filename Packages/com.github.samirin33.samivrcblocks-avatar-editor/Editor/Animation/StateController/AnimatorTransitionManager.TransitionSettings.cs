@@ -338,16 +338,21 @@ namespace Samirin33.AvatarEditor.Tools.Editor
 
         private static void RegisterUndoTransitions(IEnumerable<AnimatorTransitionBase> transitions, string name)
         {
+            // 条件・ブレンド設定はトランジション側に保存されるため、コントローラだけでなくトランジション自体を記録する
+            var targets = new List<UnityEngine.Object>();
             var controllers = new HashSet<AnimatorController>();
             foreach (var tr in transitions)
             {
+                if (tr == null)
+                    continue;
+                targets.Add(tr);
                 var c = AnimatorTransitionEditOperations.GetController(tr);
-                if (c != null)
-                    controllers.Add(c);
+                if (c != null && controllers.Add(c))
+                    targets.Add(c);
             }
 
-            foreach (var c in controllers)
-                Undo.RegisterCompleteObjectUndo(c, name);
+            if (targets.Count > 0)
+                Undo.RegisterCompleteObjectUndo(targets.ToArray(), name);
         }
 
         private void DrawAnimatorStateTransitionBlendFields(List<AnimatorStateTransition> asts)

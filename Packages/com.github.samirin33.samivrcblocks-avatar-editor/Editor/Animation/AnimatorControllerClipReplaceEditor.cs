@@ -137,13 +137,40 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
             Undo.RecordObject(controller, "Animator Controller Clip Replace");
 
-            foreach (var layer in controller.layers)
+            var layers = controller.layers;
+            var layersModified = false;
+            for (int i = 0; i < layers.Length; i++)
             {
-                replacedCount += ReplaceClipsInStateMachine(layer.stateMachine, _sourceClip, _replacementClip);
+                var layer = layers[i];
+                if (!IsSyncedLayerSharingSourceStateMachine(layers, i))
+                    replacedCount += ReplaceClipsInStateMachine(layer.stateMachine, _sourceClip, _replacementClip);
+
+                if (layer.syncedLayerIndex < 0 || layer.syncedLayerIndex >= layers.Length)
+                    continue;
+
+                foreach (var state in CollectStates(layers[layer.syncedLayerIndex].stateMachine))
+                {
+                    var overrideMotion = layer.GetOverrideMotion(state);
+                    if (overrideMotion == null) continue;
+                    if (overrideMotion == _sourceClip)
+                    {
+                        layer.SetOverrideMotion(state, _replacementClip);
+                        layersModified = true;
+                        replacedCount++;
+                    }
+                    else if (overrideMotion is BlendTree overrideTree)
+                    {
+                        replacedCount += ReplaceClipsInBlendTree(overrideTree, _sourceClip, _replacementClip);
+                    }
+                }
             }
 
+            // AnimatorControllerLayer はコピーで返るため、同期レイヤーの Override Motion は layers を再代入しないと反映されない
+            if (layersModified)
+                controller.layers = layers;
+
             EditorUtility.SetDirty(controller);
-            AssetDatabase.SaveAssets();
+            AssetDatabase.SaveAssetIfDirty(controller);
 
             _previewMatchCount = -1;
             Debug.Log($"[AnimatorControllerClipReplace] {replacedCount} 件のClipを置換しました。");
@@ -152,15 +179,58 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         private static int CountMatchingReferences(AnimatorController controller, AnimationClip sourceClip)
         {
             int count = 0;
-            foreach (var layer in controller.layers)
+            var layers = controller.layers;
+            for (int i = 0; i < layers.Length; i++)
             {
-                count += CountMatchingInStateMachine(layer.stateMachine, sourceClip);
+                var layer = layers[i];
+                if (!IsSyncedLayerSharingSourceStateMachine(layers, i))
+                    count += CountMatchingInStateMachine(layer.stateMachine, sourceClip);
+
+                if (layer.syncedLayerIndex < 0 || layer.syncedLayerIndex >= layers.Length)
+                    continue;
+
+                foreach (var state in CollectStates(layers[layer.syncedLayerIndex].stateMachine))
+                {
+                    var overrideMotion = layer.GetOverrideMotion(state);
+                    if (overrideMotion == sourceClip)
+                        count++;
+                    else if (overrideMotion is BlendTree overrideTree)
+                        count += CountMatchingInBlendTree(overrideTree, sourceClip);
+                }
             }
             return count;
         }
 
+        private static bool IsSyncedLayerSharingSourceStateMachine(AnimatorControllerLayer[] layers, int index)
+        {
+            var layer = layers[index];
+            if (layer.syncedLayerIndex < 0 || layer.syncedLayerIndex >= layers.Length)
+                return false;
+            return layer.stateMachine == null || layer.stateMachine == layers[layer.syncedLayerIndex].stateMachine;
+        }
+
+        private static List<AnimatorState> CollectStates(AnimatorStateMachine stateMachine)
+        {
+            var result = new List<AnimatorState>();
+            CollectStatesRecursive(stateMachine, result);
+            return result;
+        }
+
+        private static void CollectStatesRecursive(AnimatorStateMachine stateMachine, List<AnimatorState> result)
+        {
+            if (stateMachine == null) return;
+            foreach (var child in stateMachine.states)
+            {
+                if (child.state != null)
+                    result.Add(child.state);
+            }
+            foreach (var sub in stateMachine.stateMachines)
+                CollectStatesRecursive(sub.stateMachine, result);
+        }
+
         private static int CountMatchingInStateMachine(AnimatorStateMachine stateMachine, AnimationClip sourceClip)
         {
+            if (stateMachine == null) return 0;
             int count = 0;
             foreach (var state in stateMachine.states)
             {
@@ -198,6 +268,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
 
         private static int ReplaceClipsInStateMachine(AnimatorStateMachine stateMachine, AnimationClip sourceClip, AnimationClip replacementClip)
         {
+            if (stateMachine == null) return 0;
             int count = 0;
 
             foreach (var state in stateMachine.states)

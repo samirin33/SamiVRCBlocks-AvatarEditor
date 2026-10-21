@@ -8,14 +8,11 @@ namespace SamiVRCBlocksAvatar.Editor
     /// <summary>
     /// VN3ライセンス Ver.1.10 の情報を編集し、指定フォルダに生成するエディタウィンドウ。
     /// VRC向けサンプル（sample_vn3license110_JA）に基づく個別条件 A～X を編集します。
-    /// Package Exporter の出力先と同一の EditorPrefs キーで連携します。
+    /// Package Exporter の出力先・配布フォルダ設定（PackageExporterSettings）を共有します。
     /// Assets/samirin33 配下の場合は SamirinBoothInformation にも出力できます。
     /// </summary>
     public class VN3LicenseEditorWindow : EditorWindow
     {
-        const string EditorPrefsKeyOutputDirectory = "SamiVRCBlocksAvatar.PackageExporter.OutputDirectory";
-        const string EditorPrefsKeySourceFolder = "SamiVRCBlocksAvatar.PackageExporter.SourceFolder";
-
         string _outputDirectory = "";
         string _sourceFolderPath = "";
         VN3LicenseInfo _info;
@@ -40,8 +37,8 @@ namespace SamiVRCBlocksAvatar.Editor
 
         void OnEnable()
         {
-            _outputDirectory = EditorPrefs.GetString(EditorPrefsKeyOutputDirectory, "");
-            _sourceFolderPath = EditorPrefs.GetString(EditorPrefsKeySourceFolder, "");
+            _outputDirectory = PackageExporterSettings.OutputDirectory;
+            _sourceFolderPath = PackageExporterSettings.SourceFolder;
             if (_info == null)
                 _info = new VN3LicenseInfo();
         }
@@ -224,10 +221,10 @@ namespace SamiVRCBlocksAvatar.Editor
                     GUI.enabled = !string.IsNullOrEmpty(_outputDirectory);
                     if (GUILayout.Button("指定フォルダに生成", GUILayout.Height(28), GUILayout.ExpandWidth(true)))
                     {
-                        EditorPrefs.SetString(EditorPrefsKeyOutputDirectory, _outputDirectory);
-                        var result = LicenseGenerator.GenerateToFolder(_outputDirectory, _info);
-                        if (result != null && File.Exists(result))
-                            EditorUtility.RevealInFinder(result);
+                        PackageExporterSettings.OutputDirectory = _outputDirectory;
+                        var folder = _outputDirectory;
+                        var info = _info;
+                        EditorApplication.delayCall += () => GenerateToOutputFolder(folder, info);
                     }
                     GUI.enabled = true;
 
@@ -255,7 +252,7 @@ namespace SamiVRCBlocksAvatar.Editor
 
         void DrawBoothInformationSection()
         {
-            _sourceFolderPath = EditorPrefs.GetString(EditorPrefsKeySourceFolder, _sourceFolderPath ?? "");
+            _sourceFolderPath = PackageExporterSettings.SourceFolder;
             var hasBoothTarget = PackageExporter.TryGetBoothInformationOutputFolder(
                 _sourceFolderPath, out var boothFolder);
 
@@ -304,16 +301,62 @@ namespace SamiVRCBlocksAvatar.Editor
 
             if (GUILayout.Button("Booth Information に生成", GUILayout.ExpandWidth(true)))
             {
-                var result = PackageExporter.WriteTextToBoothInformationFolder(
-                    _sourceFolderPath,
-                    LicenseGenerator.LicenseTextFileName,
-                    LicenseGenerator.BuildLicenseText(_info));
-                if (!string.IsNullOrEmpty(result) && File.Exists(result))
-                    EditorUtility.RevealInFinder(result);
-                else
-                    EditorUtility.DisplayDialog("生成", "Booth Information への書き出しに失敗しました。", "OK");
+                var sourceFolder = _sourceFolderPath;
+                var existingPath = LicenseGenerator.GetLicenseTextPath(PackageExporter.ToFullPath(boothFolder));
+                var text = LicenseGenerator.BuildLicenseText(_info);
+                EditorApplication.delayCall += () => GenerateToBoothInformation(sourceFolder, existingPath, text);
             }
             EditorGUILayout.EndHorizontal();
+        }
+
+        // 以下はダイアログとファイル書き込み・Refresh を伴うため、OnGUI のレイアウト外（delayCall）から呼ぶ。
+
+        static void GenerateToOutputFolder(string folder, VN3LicenseInfo info)
+        {
+            var path = LicenseGenerator.GetLicenseTextPath(folder);
+            if (string.IsNullOrEmpty(path) || !ConfirmOverwrite(path))
+                return;
+
+            var result = LicenseGenerator.GenerateToFolder(folder, info);
+            if (result != null && File.Exists(result))
+                EditorUtility.RevealInFinder(result);
+            else
+                EditorUtility.DisplayDialog("生成", "VN3License.txt の書き出しに失敗しました。Console を確認してください。\n" + path, "OK");
+        }
+
+        static void GenerateToBoothInformation(string sourceFolder, string existingPath, string licenseText)
+        {
+            if (!string.IsNullOrEmpty(existingPath) && !ConfirmOverwrite(existingPath))
+                return;
+
+            string result = null;
+            try
+            {
+                result = PackageExporter.WriteTextToBoothInformationFolder(
+                    sourceFolder,
+                    LicenseGenerator.LicenseTextFileName,
+                    licenseText);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError("[VN3 License] Booth Information への書き出しに失敗: " + e.Message);
+            }
+
+            if (!string.IsNullOrEmpty(result) && File.Exists(result))
+                EditorUtility.RevealInFinder(result);
+            else
+                EditorUtility.DisplayDialog("生成", "Booth Information への書き出しに失敗しました。", "OK");
+        }
+
+        static bool ConfirmOverwrite(string path)
+        {
+            if (!File.Exists(path))
+                return true;
+            return EditorUtility.DisplayDialog(
+                "VN3 License",
+                $"{LicenseGenerator.LicenseTextFileName} が既にあります。上書きしますか？\n手で編集した内容は失われます。\n\n{path}",
+                "上書き",
+                "キャンセル");
         }
     }
 }

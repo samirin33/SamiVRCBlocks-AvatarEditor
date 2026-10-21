@@ -89,10 +89,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 return;
             }
 
-            var scope = _controllerClips != null && _controllerClips.Count > 0
-                ? _controllerClips
-                : new List<AnimationClip> { _clip };
-            AnimationClipBindingPathUtility.ReplaceMissingBindingsByRememberedObject(_root.transform, scope);
+            // Undo/ヒエラルキー変更から呼ばれるため読み取りのみ。ここで書き換えると Ctrl+Z の直後に再適用されてしまう
             _missingPaths = AnimationClipBindingPathUtility
                 .GetMissingBindingPaths(_root.transform, _clip)
                 .ToList();
@@ -136,6 +133,15 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                     // {
                     //     OpenPathReplace(null, new[] { _clip });
                     // }
+
+                    EditorGUI.BeginDisabledGroup(_missingPaths.Count == 0 || !AnimationClipBindingPathUtility.HierarchyWatchEnabled);
+                    if (GUILayout.Button(new GUIContent("移動・リネームを追跡して修復",
+                            "ヒエラルキー監視が記録したオブジェクトの移動先・新しい名前に、Missing パスを付け替えます（Undo 可）。"),
+                            GUILayout.Height(24)))
+                    {
+                        ResolveByRememberedObjects();
+                    }
+                    EditorGUI.EndDisabledGroup();
 
                     EditorGUI.BeginDisabledGroup(_missingPaths.Count == 0);
                     if (GUILayout.Button("選択 Clip の Missing をすべて削除", GUILayout.Height(24)))
@@ -249,7 +255,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             if (removed <= 0)
                 return false;
 
-            AssetDatabase.SaveAssets();
+            AssetDatabase.SaveAssetIfDirty(clip);
             AnimationClipSelector.InvalidateAndRepaint();
             return true;
         }
@@ -266,6 +272,25 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             RefreshMissingPaths();
             Debug.Log($"[AnimationClipSelector] Missing パス「{path}」のバインディングを {clips.Count} Clip から {removed} 件削除しました。");
             return true;
+        }
+
+        private void ResolveByRememberedObjects()
+        {
+            if (_clip == null || _root == null)
+                return;
+
+            var scope = _controllerClips != null && _controllerClips.Count > 0
+                ? _controllerClips
+                : new List<AnimationClip> { _clip };
+            var replaced = AnimationClipBindingPathUtility.ReplaceMissingBindingsByRememberedObject(_root.transform, scope);
+            if (replaced <= 0)
+            {
+                ShowNotification(new GUIContent("追跡できる移動・リネームはありませんでした"));
+                return;
+            }
+
+            AnimationClipSelector.InvalidateAndRepaint();
+            Debug.Log($"[AnimationClipSelector] 移動・リネームを追跡して Missing バインディングを {replaced} 件付け替えました。");
         }
 
         private void RemoveAllMissingBindings(IEnumerable<AnimationClip> clips)

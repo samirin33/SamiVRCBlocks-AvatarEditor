@@ -19,7 +19,6 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
     [InitializeOnLoad]
     internal static class AnimationClipSelectorStateManager
     {
-        private static AnimationClipSelectorSettings _cachedSettings;
         private static bool _pendingSave;
         private static double _pendingSaveRequestTime;
         private const double SaveDebounceSeconds = 3.0;
@@ -29,20 +28,14 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         {
             EditorApplication.update += OnEditorUpdate;
             Selection.selectionChanged += OnSelectionChanged;
+            // デバウンス中の変更は static フラグしか持たないため、終了・リロード前に書き出す
+            EditorApplication.quitting += FlushPendingSave;
+            AssemblyReloadEvents.beforeAssemblyReload += FlushPendingSave;
         }
 
         private static AnimationClipSelectorSettings GetSettings()
         {
-            if (_cachedSettings == null)
-                _cachedSettings = AssetDatabase.LoadAssetAtPath<AnimationClipSelectorSettings>(
-                    AnimationClipSelector.SettingsAssetPath);
-            return _cachedSettings;
-        }
-
-        /// <summary>Settings インスタンスを外部から設定する（AnimationClipSelector.OnEnable で呼ぶ）。</summary>
-        internal static void SetSettingsInstance(AnimationClipSelectorSettings settings)
-        {
-            _cachedSettings = settings;
+            return AnimationClipSelectorSettings.instance;
         }
 
         #region フォールダウン状態
@@ -132,10 +125,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             _pendingSave = false;
             var settings = GetSettings();
             if (settings != null)
-            {
-                EditorUtility.SetDirty(settings);
-                AssetDatabase.SaveAssets();
-            }
+                settings.Save();
         }
 
         private static void OnEditorUpdate()
@@ -146,7 +136,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             _pendingSave = false;
             var settings = GetSettings();
             if (settings != null)
-                AssetDatabase.SaveAssets();
+                settings.Save();
         }
 
         #endregion
