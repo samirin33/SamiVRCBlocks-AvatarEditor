@@ -12,11 +12,10 @@ namespace SamiVRCBlocksAvatar.Editor
 {
     /// <summary>
     /// Expression Menu 向けの TMPro リッチテキストを、エディタウィンドウ内で描画します。
+    /// Gesture Manager 非導入時のフラットプレビュー用。フォントはラジアルプレビューと同じエディタ標準です。
     /// </summary>
     sealed class MenuRichTextTmpPreview : IDisposable
     {
-        const string NotoSansJpPath =
-            "Packages/com.github.samirin33.samivrcblocks-avatar/Editor/Fonts/NotoSansJP-Medium.ttf";
         const string LiberationSansSdfResourcesPath = "Fonts & Materials/LiberationSans SDF";
 
         public static bool IsAvailable
@@ -40,9 +39,9 @@ namespace SamiVRCBlocksAvatar.Editor
         int _lastH;
         bool _fontMissing;
         TextMeshPro _tmp;
-        static TMP_FontAsset _notoSansJpFont;
+        static TMP_FontAsset _editorDefaultFont;
         static TMP_FontAsset _previewHostFont;
-        static bool _notoResolveAttempted;
+        static bool _editorFontResolveAttempted;
 #endif
 
         public string StatusMessage { get; private set; } = "";
@@ -98,10 +97,21 @@ namespace SamiVRCBlocksAvatar.Editor
                 normal = { textColor = Color.white },
                 padding = new RectOffset(12, 12, 8, 8)
             };
-            var font = AssetDatabase.LoadAssetAtPath<Font>(NotoSansJpPath);
+            var font = ResolveEditorDefaultFont();
             if (font != null)
                 style.font = font;
             GUI.Label(rect, string.IsNullOrEmpty(text) ? " " : text, style);
+        }
+
+        /// <summary>
+        /// MenuRichTextRadialPreview.UseDefaultFont と同じ基準のエディタ標準フォント。
+        /// </summary>
+        static Font ResolveEditorDefaultFont()
+        {
+            var font = EditorStyles.standardFont;
+            if (font == null)
+                font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            return font;
         }
 
 #if SAMIVRC_HAS_TMPRO
@@ -173,16 +183,15 @@ namespace SamiVRCBlocksAvatar.Editor
         /// </summary>
         void ApplyPreviewFonts()
         {
-            var noto = GetOrCreateNotoSansJpFont();
-            if (noto == null)
+            var glyphFont = GetOrCreateEditorDefaultTmpFont();
+            if (glyphFont == null)
             {
                 _fontMissing = true;
-                StatusMessage =
-                    "NotoSansJP-Medium.ttf から TMP フォントを作成できませんでした。Packages/.../Editor/Fonts/NotoSansJP-Medium.ttf を確認してください。";
+                StatusMessage = "エディタ標準フォントから TMP フォントを作成できませんでした。";
                 return;
             }
 
-            var host = GetOrCreatePreviewHostFont(noto);
+            var host = GetOrCreatePreviewHostFont(glyphFont);
             _tmp.font = host;
             if (host.material != null)
                 _tmp.fontSharedMaterial = host.material;
@@ -190,11 +199,11 @@ namespace SamiVRCBlocksAvatar.Editor
             StatusMessage = "";
         }
 
-        static TMP_FontAsset GetOrCreatePreviewHostFont(TMP_FontAsset noto)
+        static TMP_FontAsset GetOrCreatePreviewHostFont(TMP_FontAsset glyphFont)
         {
             if (_previewHostFont != null)
             {
-                BindNotoFallback(_previewHostFont, noto);
+                BindGlyphFallback(_previewHostFont, glyphFont);
                 return _previewHostFont;
             }
 
@@ -206,20 +215,20 @@ namespace SamiVRCBlocksAvatar.Editor
 
             if (source == null)
             {
-                // ホストが取れない場合は Noto 単体（mark が前面になる可能性あり）
-                return noto;
+                // ホストが取れない場合は標準フォント単体（mark が前面になる可能性あり）
+                return glyphFont;
             }
 
             _previewHostFont = UnityEngine.Object.Instantiate(source);
             _previewHostFont.name = "MenuRichTextPreviewHost";
             _previewHostFont.hideFlags = HideFlags.HideAndDontSave;
-            BindNotoFallback(_previewHostFont, noto);
+            BindGlyphFallback(_previewHostFont, glyphFont);
             return _previewHostFont;
         }
 
-        static void BindNotoFallback(TMP_FontAsset host, TMP_FontAsset noto)
+        static void BindGlyphFallback(TMP_FontAsset host, TMP_FontAsset glyphFont)
         {
-            if (host == null || noto == null || ReferenceEquals(host, noto))
+            if (host == null || glyphFont == null || ReferenceEquals(host, glyphFont))
                 return;
 
             if (host.fallbackFontAssetTable == null)
@@ -227,31 +236,24 @@ namespace SamiVRCBlocksAvatar.Editor
 
             // 共有アセットを汚さないよう、インスタンス側だけ入れ替える
             host.fallbackFontAssetTable.Clear();
-            host.fallbackFontAssetTable.Add(noto);
+            host.fallbackFontAssetTable.Add(glyphFont);
         }
 
-        static TMP_FontAsset GetOrCreateNotoSansJpFont()
+        static TMP_FontAsset GetOrCreateEditorDefaultTmpFont()
         {
-            if (_notoSansJpFont != null)
-                return _notoSansJpFont;
-            if (_notoResolveAttempted && _notoSansJpFont == null)
+            if (_editorDefaultFont != null)
+                return _editorDefaultFont;
+            if (_editorFontResolveAttempted && _editorDefaultFont == null)
                 return null;
-            _notoResolveAttempted = true;
+            _editorFontResolveAttempted = true;
 
-            var source = AssetDatabase.LoadAssetAtPath<Font>(NotoSansJpPath);
-            if (source == null)
-            {
-                var path = AssetDatabase.GUIDToAssetPath("c85693e86d8321b42a13153ab89db63f");
-                if (!string.IsNullOrEmpty(path))
-                    source = AssetDatabase.LoadAssetAtPath<Font>(path);
-            }
-
+            var source = ResolveEditorDefaultFont();
             if (source == null)
                 return null;
 
             try
             {
-                _notoSansJpFont = TMP_FontAsset.CreateFontAsset(
+                _editorDefaultFont = TMP_FontAsset.CreateFontAsset(
                     source,
                     90,
                     9,
@@ -264,22 +266,22 @@ namespace SamiVRCBlocksAvatar.Editor
             {
                 try
                 {
-                    _notoSansJpFont = TMP_FontAsset.CreateFontAsset(source);
+                    _editorDefaultFont = TMP_FontAsset.CreateFontAsset(source);
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning("[MenuRichText] NotoSansJP TMP フォント作成に失敗: " + ex.Message);
+                    Debug.LogWarning("[MenuRichText] エディタ標準 TMP フォント作成に失敗: " + ex.Message);
                     return null;
                 }
             }
 
-            if (_notoSansJpFont != null)
+            if (_editorDefaultFont != null)
             {
-                _notoSansJpFont.name = "NotoSansJP-Medium (MenuRichText Runtime)";
-                _notoSansJpFont.hideFlags = HideFlags.HideAndDontSave;
+                _editorDefaultFont.name = "EditorDefault (MenuRichText Runtime)";
+                _editorDefaultFont.hideFlags = HideFlags.HideAndDontSave;
             }
 
-            return _notoSansJpFont;
+            return _editorDefaultFont;
         }
 
         void Render(int width, int height, string text, Color background)
@@ -336,14 +338,14 @@ namespace SamiVRCBlocksAvatar.Editor
 
         static void TryAddCharacters(string text)
         {
-            if (_notoSansJpFont == null || string.IsNullOrEmpty(text))
+            if (_editorDefaultFont == null || string.IsNullOrEmpty(text))
                 return;
             var plain = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]*>", "");
             if (string.IsNullOrEmpty(plain))
                 return;
             try
             {
-                _notoSansJpFont.TryAddCharacters(plain);
+                _editorDefaultFont.TryAddCharacters(plain);
             }
             catch
             {
