@@ -181,29 +181,29 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             var createdStateIds = new List<int>();
             var createdTransitionIds = new List<int>();
             var createdStateMachineIds = new List<int>();
+            var changedTransitionIds = new List<int>();
 
-            // 既存遷移のプロパティ変更には反応しない。Exit Time だけで遷移する既存遷移を
-            // 「未編集の新規遷移」と誤判定して条件なし・Exit Time なし（無効な遷移）にしてしまうため。
             for (int i = 0; i < stream.length; i++)
             {
-                if (stream.GetEventType(i) != ObjectChangeKind.CreateAssetObject)
-                    continue;
-
-                stream.GetCreateAssetObjectEvent(i, out var args);
-                var obj = EditorUtility.InstanceIDToObject(args.instanceId);
-                if (obj is AnimatorState)
-                    createdStateIds.Add(args.instanceId);
-                else if (obj is AnimatorStateTransition)
-                    createdTransitionIds.Add(args.instanceId);
-                else if (obj is AnimatorStateMachine)
-                    createdStateMachineIds.Add(args.instanceId);
+                var kind = stream.GetEventType(i);
+                if (kind == ObjectChangeKind.CreateAssetObject)
+                {
+                    stream.GetCreateAssetObjectEvent(i, out var args);
+                    var obj = EditorUtility.InstanceIDToObject(args.instanceId);
+                    if (obj is AnimatorState)
+                        createdStateIds.Add(args.instanceId);
+                    else if (obj is AnimatorStateTransition)
+                        createdTransitionIds.Add(args.instanceId);
+                    else if (obj is AnimatorStateMachine)
+                        createdStateMachineIds.Add(args.instanceId);
+                }
+                else if (kind == ObjectChangeKind.ChangeAssetObjectProperties)
+                {
+                    stream.GetChangeAssetObjectPropertiesEvent(i, out var changeArgs);
+                    if (EditorUtility.InstanceIDToObject(changeArgs.instanceId) is AnimatorStateTransition)
+                        changedTransitionIds.Add(changeArgs.instanceId);
+                }
             }
-
-            if (createdStateIds.Count == 0 && createdTransitionIds.Count == 0 && createdStateMachineIds.Count == 0)
-                return;
-
-            // Animator ウィンドウで開いている Controller 以外（スクリプトや NDMF ビルドが生成したもの等）は対象外
-            var editingControllerPaths = GetAnimatorWindowControllerPaths();
 
             var isGraphPasteOrDuplicate =
                 (createdStateIds.Count >= 1 && createdTransitionIds.Count >= 1)
@@ -225,7 +225,6 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                     // グラフのコピペ／複製では既存設定を維持する
                     if (isGraphPasteOrDuplicate) return;
                     var state = EditorUtility.InstanceIDToObject(id) as AnimatorState;
-                    if (!IsInControllers(state, editingControllerPaths)) return;
                     ApplyDefaultsToState(state);
                 };
             }
@@ -240,9 +239,8 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                         || EditorApplication.timeSinceStartup < _graphPasteGraceUntil)
                         return;
                     var tr = EditorUtility.InstanceIDToObject(id) as AnimatorStateTransition;
-                    if (!IsInControllers(tr, editingControllerPaths)) return;
-                    // Make Transition 等の単発作成のみ。Unity 初期値のばらつきに備え fresh 判定はしない。
-                    ApplyDefaultsToTransition(tr);
+                    // Make Transition 等の単発作成のみ。Unity 初期値のばらつきに備え fresh 判定は緩める。
+                    ApplyDefaultsToTransition(tr, requireFreshUnityDefaults: false);
                 };
             }
 
@@ -252,51 +250,25 @@ namespace Samirin33.AvatarEditor.Animation.Editor
                 EditorApplication.delayCall += () =>
                 {
                     var sm = EditorUtility.InstanceIDToObject(id) as AnimatorStateMachine;
-                    if (!IsInControllers(sm, editingControllerPaths)) return;
                     ApplyDefaultsToNewLayer(sm);
                 };
             }
-        }
 
-        private static bool IsInControllers(UnityEngine.Object obj, HashSet<string> controllerPaths)
-        {
-            if (obj == null || controllerPaths == null || controllerPaths.Count == 0) return false;
-            var path = AssetDatabase.GetAssetPath(obj);
-            return !string.IsNullOrEmpty(path) && controllerPaths.Contains(path);
-        }
+            // コピペ直後のプロパティ反映ではデフォルト適用しない
+            if (skipTransitionAutoDefaults)
+                return;
 
-        /// <summary>開いている Animator ウィンドウが表示中の Controller のアセットパス一覧。</summary>
-        private static HashSet<string> GetAnimatorWindowControllerPaths()
-        {
-            var result = new HashSet<string>();
-            var toolType = Type.GetType("UnityEditor.Graphs.AnimatorControllerTool, UnityEditor.Graphs");
-            if (toolType == null) return result;
-
-            const System.Reflection.BindingFlags flags =
-                System.Reflection.BindingFlags.Instance |
-                System.Reflection.BindingFlags.Public |
-                System.Reflection.BindingFlags.NonPublic;
-            var controllerProp = toolType.GetProperty("animatorController", flags);
-            if (controllerProp == null) return result;
-
-            foreach (var window in Resources.FindObjectsOfTypeAll(toolType))
+            foreach (var instanceId in changedTransitionIds)
             {
-                if (window == null) continue;
-                AnimatorController controller;
-                try
+                var id = instanceId;
+                EditorApplication.delayCall += () =>
                 {
-                    controller = controllerProp.GetValue(window) as AnimatorController;
-                }
-                catch
-                {
-                    continue;
-                }
-                if (controller == null) continue;
-                var path = AssetDatabase.GetAssetPath(controller);
-                if (!string.IsNullOrEmpty(path))
-                    result.Add(path);
+                    if (ConsumeSuppressedInstanceId(ScriptAppliedTransitionInstanceIds, id)) return;
+                    if (EditorApplication.timeSinceStartup < _graphPasteGraceUntil) return;
+                    var tr = EditorUtility.InstanceIDToObject(id) as AnimatorStateTransition;
+                    ApplyDefaultsToTransition(tr, requireFreshUnityDefaults: true);
+                };
             }
-            return result;
         }
 #endif
 
@@ -316,7 +288,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         public static void ApplyDefaultsToTransitionFromScript(AnimatorStateTransition transition)
         {
             SuppressNextEventAutoApply(ScriptAppliedTransitionInstanceIds, transition);
-            ApplyDefaultsToTransition(transition);
+            ApplyDefaultsToTransition(transition, requireFreshUnityDefaults: false);
         }
 
         private static void SuppressNextEventAutoApply<T>(HashSet<int> suppressedIds, T obj) where T : UnityEngine.Object
@@ -444,10 +416,11 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             return baseName + separator + next;
         }
 
-        private static void ApplyDefaultsToTransition(AnimatorStateTransition transition)
+        private static void ApplyDefaultsToTransition(AnimatorStateTransition transition, bool requireFreshUnityDefaults = true)
         {
             if (!Enabled) return;
             if (transition == null) return;
+            if (requireFreshUnityDefaults && !ShouldApplyDefaultsToTransition(transition)) return;
 
             Undo.RecordObject(transition, "Animator Default Setting (Transition)");
             transition.duration = TransitionDuration;
@@ -458,6 +431,41 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             if (AnimatorTransitionEditOperations.IsAnyStateTransition(transition))
                 transition.canTransitionToSelf = TransitionCanTransitionToSelf;
             EditorUtility.SetDirty(transition);
+        }
+
+        /// <summary>
+        /// スクリプトで値を設定済みの遷移は上書きしない。
+        /// Unity の新規作成直後に近い値の場合のみデフォルト設定を適用する。
+        /// </summary>
+        private static bool ShouldApplyDefaultsToTransition(AnimatorStateTransition transition)
+        {
+            if (transition == null) return false;
+            // 条件付きはユーザー設定済み／コピペ済みとみなす
+            if (transition.conditions != null && transition.conditions.Length > 0)
+                return false;
+            if (transition.hasFixedDuration != true) return false;
+            if (!Mathf.Approximately(transition.offset, 0f)) return false;
+
+            // Unity の「新規トランジション」初期値はバージョン・作成経路（右クリック Make Transition 等）で異なる。
+            // いずれかに一致するときだけ「まだユーザーが触っていない」とみなす。
+
+            // 典型: Blend 0.25s, Exit Time 0.75, Has Exit Time
+            if (Mathf.Approximately(transition.duration, 0.25f) &&
+                transition.hasExitTime &&
+                Mathf.Approximately(transition.exitTime, 0.75f))
+                return true;
+
+            // ブレンド無し・Exit Time オフ（Unity 6 系などで見られる）
+            if (Mathf.Approximately(transition.duration, 0f) && !transition.hasExitTime)
+                return true;
+
+            // 短いクロスフェード例（環境により 0.1 / Exit Time 付き）
+            if (Mathf.Approximately(transition.duration, 0.1f) &&
+                transition.hasExitTime &&
+                Mathf.Approximately(transition.exitTime, 0.75f))
+                return true;
+
+            return false;
         }
 
         private static void ApplyDefaultsToNewLayer(AnimatorStateMachine stateMachine)

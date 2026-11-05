@@ -77,6 +77,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 EditorGUI.BeginDisabledGroup(!canPasteAsNew);
                 if (GUILayout.Button("ペースト(新規)", GUILayout.Width(110f)) && canPasteAsNew)
                 {
+                    Undo.RegisterCompleteObjectUndo(controllers.ToArray(), "Paste StateMachineBehaviour As New");
                     foreach (var st in allStates)
                         AnimatorBehivaourCopy.PasteAsNew(st, copiedType);
                     foreach (var c in controllers)
@@ -267,8 +268,9 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                         : (captured.FullName?.Replace('.', '/') ?? captured.Name);
                     menu.AddItem(new GUIContent(label), false, () =>
                     {
+                        Undo.RegisterCompleteObjectUndo(controllers, "Add StateMachineBehaviour");
                         foreach (var st in states)
-                            AnimatorBehivaourCopy.AddStateMachineBehaviourWithUndo(st, captured, "Add StateMachineBehaviour");
+                            st.AddStateMachineBehaviour(captured);
                         foreach (var c in controllers)
                             EditorUtility.SetDirty(c);
                         RefreshSelection();
@@ -287,8 +289,8 @@ namespace Samirin33.AvatarEditor.Tools.Editor
             var controllers = selectedStates.Select(s => s.controller).Where(c => c != null).Distinct().ToArray();
             if (controllers.Length == 0)
                 return;
+            Undo.RegisterCompleteObjectUndo(controllers, "Remove StateMachineBehaviour");
 
-            const string undoLabel = "Remove StateMachineBehaviour";
             foreach (var pair in selectedStates)
             {
                 var state = pair.state;
@@ -299,8 +301,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     continue;
 
                 var target = src[index];
-                // 破棄より前に完全スナップショットを取らないと、Undo で配列が破棄済み参照を指したまま戻る
-                Undo.RegisterCompleteObjectUndo(state, undoLabel);
                 state.behaviours = src.Where((_, i) => i != index).ToArray();
                 if (target != null)
                 {
@@ -308,7 +308,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                     if (_behaviourEditors.TryGetValue(id, out var ed) && ed != null)
                         DestroyImmediate(ed);
                     _behaviourEditors.Remove(id);
-                    Undo.DestroyObjectImmediate(target);
+                    DestroyImmediate(target, true);
                 }
             }
 
@@ -353,6 +353,7 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 return;
 
             var targetIndex = index + direction;
+            Undo.RegisterCompleteObjectUndo(controllers, "Reorder StateMachineBehaviour");
 
             foreach (var pair in selectedStates)
             {
@@ -363,7 +364,6 @@ namespace Samirin33.AvatarEditor.Tools.Editor
                 if (index < 0 || index >= arr.Length || targetIndex < 0 || targetIndex >= arr.Length)
                     continue;
 
-                Undo.RecordObject(state, "Reorder StateMachineBehaviour");
                 (arr[index], arr[targetIndex]) = (arr[targetIndex], arr[index]);
                 state.behaviours = arr;
             }

@@ -34,3 +34,4 @@
 | 14 | [14-menu-rich-text-editor.md](features/14-menu-rich-text-editor.md) | Menu Rich Text Editor |
 | 15 | [15-transform-wiggle-squish.md](features/15-transform-wiggle-squish.md) | Transform Wiggle / Squish |
 | 16 | [16-loop-key.md](features/16-loop-key.md) | ループキー |
+| 17 | [17-vrc-dynamics-parameter-copy.md](features/17-vrc-dynamics-parameter-copy.md) | VRC Dynamics Parameter Copy |

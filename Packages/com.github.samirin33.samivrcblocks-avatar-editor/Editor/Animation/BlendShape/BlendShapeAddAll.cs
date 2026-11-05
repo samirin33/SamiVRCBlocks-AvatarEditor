@@ -225,7 +225,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             }
 
             EditorUtility.SetDirty(_clip);
-            AssetDatabase.SaveAssetIfDirty(_clip);
+            AssetDatabase.SaveAssets();
             EditorGUIUtility.PingObject(_clip);
             Debug.Log($"[BlendShapeAddAll] キー追加: {added} 本, clip={_clip.name}, 時刻={t:0.000}s, path=" + (string.IsNullOrEmpty(relativePath) ? "「root の直下」" : relativePath));
         }

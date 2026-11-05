@@ -923,7 +923,7 @@ namespace SamiVRCBlocksAvatar.Editor
                             slots += smr.sharedMaterials?.Length ?? 0;
                             if (smr.sharedMesh != null)
                             {
-                                polys += CountTriangles(smr.sharedMesh);
+                                polys += smr.sharedMesh.triangles.Length / 3;
                                 verts += smr.sharedMesh.vertexCount;
                             }
                         }
@@ -954,7 +954,7 @@ namespace SamiVRCBlocksAvatar.Editor
                                 slots += mr.sharedMaterials?.Length ?? 0;
                             if (mf != null && mf.sharedMesh != null)
                             {
-                                polys += CountTriangles(mf.sharedMesh);
+                                polys += mf.sharedMesh.triangles.Length / 3;
                                 verts += mf.sharedMesh.vertexCount;
                             }
                         }
@@ -1022,7 +1022,7 @@ namespace SamiVRCBlocksAvatar.Editor
                 slots += smr.sharedMaterials?.Length ?? 0;
                 if (smr.sharedMesh == null)
                     continue;
-                polys += CountTriangles(smr.sharedMesh);
+                polys += smr.sharedMesh.triangles.Length / 3;
                 verts += smr.sharedMesh.vertexCount;
             }
 
@@ -1032,7 +1032,7 @@ namespace SamiVRCBlocksAvatar.Editor
                 var mf = mr.GetComponent<MeshFilter>();
                 if (mf == null || mf.sharedMesh == null)
                     continue;
-                polys += CountTriangles(mf.sharedMesh);
+                polys += mf.sharedMesh.triangles.Length / 3;
                 verts += mf.sharedMesh.vertexCount;
             }
 
@@ -1229,20 +1229,24 @@ namespace SamiVRCBlocksAvatar.Editor
             return prop?.GetValue(target);
         }
 
-        static Type FindType(string fullName) => ReflectionUtil.FindType(fullName);
-
-        /// <summary>
-        /// mesh.triangles は全インデックス配列を毎回コピーし、ライン/ポイントのサブメッシュも数えてしまうため使わない。
-        /// </summary>
-        static int CountTriangles(Mesh mesh)
+        static Type FindType(string fullName)
         {
-            long count = 0;
-            for (int i = 0; i < mesh.subMeshCount; i++)
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                if (mesh.GetTopology(i) == MeshTopology.Triangles)
-                    count += mesh.GetIndexCount(i) / 3;
+                Type type = null;
+                try
+                {
+                    type = assembly.GetType(fullName, false);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (type != null)
+                    return type;
             }
-            return (int)Math.Min(count, int.MaxValue);
+            return null;
         }
     }
 
@@ -1356,7 +1360,25 @@ namespace SamiVRCBlocksAvatar.Editor
             return field?.GetValue(target);
         }
 
-        static Type FindType(string fullName) => ReflectionUtil.FindType(fullName);
+        static Type FindType(string fullName)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type type = null;
+                try
+                {
+                    type = assembly.GetType(fullName, false);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (type != null)
+                    return type;
+            }
+            return null;
+        }
     }
 }
 #endif

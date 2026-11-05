@@ -28,19 +28,10 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
     /// Animationウィンドウで編集中のAnimatorを取得し、
     /// 編集可能なAnimationClip一覧を表示して編集対象を選択できるエディタ拡張。
     /// </summary>
-    /// <remarks>競合キャッシュは AnimationClipSelector.ConflictCache.cs、Animator ウィンドウ連携とステート検索は AnimationClipSelector.AnimatorWindowLink.cs。</remarks>
-    public partial class AnimationClipSelector : EditorWindow, ISerializationCallbackReceiver
+    public class AnimationClipSelector : EditorWindow, ISerializationCallbackReceiver
     {
         [SerializeField] private Vector2 _scrollPosition;
         private List<AnimationClip> _clips = new List<AnimationClip>();
-        [SerializeField] private string _selectedControllerPath;
-        private RuntimeAnimatorController _clipListCacheController;
-        private bool _clipListCacheBlendTreeNested;
-        private List<KeyValuePair<string, ClipGroup>> _clipsByLayerCache;
-        private static bool _clipListCacheInvalidated;
-        /// <summary>Selector が最後に表示した Animator とController。詳細ウィンドウ等が同じ Controller を解決するために使う。</summary>
-        private static GameObject _displayedAnimatorObject;
-        private static RuntimeAnimatorController _displayedController;
         private Dictionary<string, bool> _layerFoldoutState = new Dictionary<string, bool>();
         [SerializeField] private List<string> _serializedFoldoutKeys = new List<string>();
         [SerializeField] private List<bool> _serializedFoldoutValues = new List<bool>();
@@ -56,8 +47,19 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         private static bool _pathConflictCacheInvalidated;
 
         private const string WindowTitle = "Animation Clip Selector";
+        internal const string SettingsAssetPath = "Assets/SamiVRCBlocksAvatar/Editor/AnimationClipSelectorSettings.asset";
 
-        private static AnimationClipSelectorSettings Settings => AnimationClipSelectorSettings.instance;
+        private AnimationClipSelectorSettings _settings;
+
+        private AnimationClipSelectorSettings Settings
+        {
+            get
+            {
+                if (_settings == null)
+                    _settings = LoadOrCreateSettings();
+                return _settings;
+            }
+        }
 
         [MenuItem("SBAvatarEditor/Animation/Animation Clip Selector", false, 2)]
         public static void Open()
@@ -88,12 +90,9 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
 
         private void OnEnable()
         {
+            _settings = LoadOrCreateSettings();
+            AnimationClipSelectorStateManager.SetSettingsInstance(_settings);
             Undo.undoRedoPerformed += OnUndoRedoPerformed;
-            EditorApplication.projectChanged += InvalidateClipListCache;
-#if UNITY_2022_2_OR_NEWER
-            ObjectChangeEvents.changesPublished += OnObjectChangesPublished;
-#endif
-            _clipListCacheInvalidated = true;
 
             if (_lastSelectedClip != null)
             {
@@ -108,10 +107,6 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         private void OnDisable()
         {
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
-            EditorApplication.projectChanged -= InvalidateClipListCache;
-#if UNITY_2022_2_OR_NEWER
-            ObjectChangeEvents.changesPublished -= OnObjectChangesPublished;
-#endif
             if (!string.IsNullOrEmpty(_currentControllerPath))
             {
                 AnimationClipSelectorStateManager.SaveFoldoutState(_currentControllerPath, _layerFoldoutState);
@@ -120,121 +115,46 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             SaveSettings();
             _pathConflictCache.Clear();
             _pathConflictCachePending = false;
-            _clipsByLayerCache = null;
-            _clipListCacheController = null;
         }
 
         private static void OnUndoRedoPerformed()
         {
             _pathConflictCacheInvalidated = true;
-            _clipListCacheInvalidated = true;
             AnimationClipSelectorStateManager.RequestSave();
         }
 
-        private static void InvalidateClipListCache()
-        {
-            _clipListCacheInvalidated = true;
-        }
-
-#if UNITY_2022_2_OR_NEWER
-        private static void OnObjectChangesPublished(ref ObjectChangeEventStream stream)
-        {
-            for (int i = 0; i < stream.length; i++)
-            {
-                switch (stream.GetEventType(i))
-                {
-                    case ObjectChangeKind.CreateAssetObject:
-                    case ObjectChangeKind.DestroyAssetObject:
-                    case ObjectChangeKind.ChangeAssetObjectProperties:
-                        _clipListCacheInvalidated = true;
-                        return;
-                }
-            }
-        }
-#endif
-
         #region 設定・Animation ウィンドウ
 
-        private static void SaveSettings()
+        private static AnimationClipSelectorSettings LoadOrCreateSettings()
         {
-            Settings.Save();
+            var settings = AssetDatabase.LoadAssetAtPath<AnimationClipSelectorSettings>(SettingsAssetPath);
+            if (settings != null) return settings;
+
+            var dir = Path.GetDirectoryName(SettingsAssetPath)?.Replace("\\", "/");
+            if (!string.IsNullOrEmpty(dir) && !AssetDatabase.IsValidFolder("Assets/SamiVRCBlocksAvatar"))
+            {
+                AssetDatabase.CreateFolder("Assets", "SamiVRCBlocksAvatar");
+            }
+            if (!string.IsNullOrEmpty(dir) && !AssetDatabase.IsValidFolder("Assets/SamiVRCBlocksAvatar/Editor"))
+            {
+                AssetDatabase.CreateFolder("Assets/SamiVRCBlocksAvatar", "Editor");
+            }
+
+            settings = CreateInstance<AnimationClipSelectorSettings>();
+            settings.ItemSpacing = 2f;
+            settings.ShowBlendTreeNested = false;
+            AssetDatabase.CreateAsset(settings, SettingsAssetPath);
+            AssetDatabase.SaveAssets();
+            return settings;
         }
 
-        /// <summary>
-        /// Animator 自身と VRCAvatarDescriptor の Playable Layers から、表示する Controller を選ぶ。
-        /// 保存済みの選択が候補に無ければ Animator の Controller、無ければ FX、それも無ければ先頭。
-        /// </summary>
-        private static RuntimeAnimatorController ChooseController(List<AvatarControllerEntry> candidates, string preferredPath)
+        private void SaveSettings()
         {
-            if (candidates == null || candidates.Count == 0) return null;
-
-            if (!string.IsNullOrEmpty(preferredPath))
+            if (_settings != null)
             {
-                foreach (var entry in candidates)
-                {
-                    if (AssetDatabase.GetAssetPath(entry.Controller) == preferredPath)
-                        return entry.Controller;
-                }
+                EditorUtility.SetDirty(_settings);
+                AssetDatabase.SaveAssets();
             }
-
-            foreach (var entry in candidates)
-            {
-                if (entry.Label == "Animator") return entry.Controller;
-            }
-            foreach (var entry in candidates)
-            {
-                if (entry.Label == "FX") return entry.Controller;
-            }
-            return candidates[0].Controller;
-        }
-
-        /// <summary>root の Animator について、Selector で表示中の Controller（無ければ既定の候補）を返す。</summary>
-        internal static RuntimeAnimatorController ResolveControllerForRoot(GameObject root)
-        {
-            var animator = GetAnimatorFromRoot(root);
-            if (animator == null) return null;
-
-            var candidates = AvatarAnimatorControllerCollector.GetControllers(animator);
-            if (_displayedController != null && _displayedAnimatorObject == animator.gameObject)
-            {
-                foreach (var entry in candidates)
-                {
-                    if (entry.Controller == _displayedController)
-                        return _displayedController;
-                }
-            }
-            return ChooseController(candidates, null);
-        }
-
-        /// <summary>ResolveControllerForRoot の Controller が clip を含まなければ、clip を含む別の候補 Controller を返す。</summary>
-        internal static RuntimeAnimatorController ResolveControllerForClip(GameObject root, AnimationClip clip)
-        {
-            var resolved = ResolveControllerForRoot(root);
-            if (clip == null || resolved == null || resolved.animationClips.Contains(clip))
-                return resolved;
-
-            var animator = GetAnimatorFromRoot(root);
-            foreach (var entry in AvatarAnimatorControllerCollector.GetControllers(animator))
-            {
-                if (entry.Controller.animationClips.Contains(clip))
-                    return entry.Controller;
-            }
-            return resolved;
-        }
-
-        private void EnsureClipListCache(RuntimeAnimatorController controller, bool showBlendTreeNested)
-        {
-            if (!_clipListCacheInvalidated
-                && _clipsByLayerCache != null
-                && _clipListCacheController == controller
-                && _clipListCacheBlendTreeNested == showBlendTreeNested)
-                return;
-
-            _clipListCacheInvalidated = false;
-            _clipListCacheController = controller;
-            _clipListCacheBlendTreeNested = showBlendTreeNested;
-            _clips = GetAllAnimationClips(controller);
-            _clipsByLayerCache = GetClipsByGroupedLayer(controller, showBlendTreeNested);
         }
 
         private void OnGUI()
@@ -269,8 +189,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 }
 
                 var animator = GetAnimatorFromRoot(activeRoot);
-                var controllerCandidates = AvatarAnimatorControllerCollector.GetControllers(animator);
-                if (animator == null || controllerCandidates.Count == 0)
+                if (animator == null || animator.runtimeAnimatorController == null)
                 {
                     if (activeRoot == _lastActiveRoot)
                         _lastActiveRoot = null;
@@ -285,22 +204,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 activeRoot = animator.gameObject;
                 _lastActiveRoot = activeRoot;
 
-                var controller = ChooseController(controllerCandidates, _selectedControllerPath);
-                if (controllerCandidates.Count > 1)
-                {
-                    var selectedIndex = controllerCandidates.FindIndex(c => c.Controller == controller);
-                    var labels = controllerCandidates
-                        .Select(c => new GUIContent($"{c.Label}: {c.Controller.name}", AssetDatabase.GetAssetPath(c.Controller)))
-                        .ToArray();
-                    var newIndex = EditorGUILayout.Popup(new GUIContent("Controller", "Animator と VRCAvatarDescriptor の Playable Layers から表示する Controller を選びます。"), selectedIndex, labels);
-                    if (newIndex != selectedIndex && newIndex >= 0)
-                        controller = controllerCandidates[newIndex].Controller;
-                }
-                _selectedControllerPath = AssetDatabase.GetAssetPath(controller);
-                _displayedAnimatorObject = activeRoot;
-                _displayedController = controller;
-
-                EnsureClipListCache(controller, Settings.ShowBlendTreeNested);
+                _clips = GetAllAnimationClips(animator.runtimeAnimatorController);
                 if (_clips.Count == 0)
                 {
                     EditorGUILayout.HelpBox("Animator ControllerにAnimationClipが含まれていません。", MessageType.Info);
@@ -308,8 +212,8 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 }
 
                 EditorGUI.BeginChangeCheck();
-                var controllerPath = GetControllerPath(controller);
-                var clipsByLayer = _clipsByLayerCache;
+                var controllerPath = GetControllerPath(animator.runtimeAnimatorController);
+                var clipsByLayer = GetClipsByGroupedLayer(animator.runtimeAnimatorController, Settings.ShowBlendTreeNested);
 
                 if (controllerPath != _currentControllerPath)
                 {
@@ -354,8 +258,8 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 else reloadIcon.tooltip = "リストを再読み込み";
                 if (GUILayout.Button(reloadIcon, GUILayout.Width(30), GUILayout.Height(20)))
                 {
-                    ReloadSelectorList(controller, controllerPath);
-                    clipsByLayer = _clipsByLayerCache;
+                    ReloadSelectorList(animator, controllerPath);
+                    clipsByLayer = GetClipsByGroupedLayer(animator.runtimeAnimatorController, Settings.ShowBlendTreeNested);
                 }
 
                 EditorGUILayout.LabelField("検索", GUILayout.Width(28));
@@ -403,8 +307,9 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 if (_pathConflictCache.Count == 0 && _clips.Count > 0 && !_pathConflictCachePending)
                 {
                     _pathConflictCachePending = true;
-                    var capturedController = controller;
+                    var capturedController = animator.runtimeAnimatorController;
                     var capturedPath = controllerPath;
+                    var capturedClips = new List<AnimationClip>(_clips);
                     EditorApplication.delayCall += () =>
                     {
                         if (capturedPath != _pathConflictCacheControllerPath)
@@ -461,7 +366,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                         EditorGUI.indentLevel += 1;
                         GUILayout.Space(2);
                         scrollContentY += 2;
-                        DrawClipGroup(rootGroup, controllerPath, layerName, activeRoot, animator, controller, activeClip, Settings, Settings.ItemSpacing, _layerFoldoutState, _searchFilter, !isAnimationWindowOpen, getPathConflict, ref scrollContentY);
+                        DrawClipGroup(rootGroup, controllerPath, layerName, activeRoot, animator, activeClip, Settings, Settings.ItemSpacing, _layerFoldoutState, _searchFilter, !isAnimationWindowOpen, getPathConflict, ref scrollContentY);
                         EditorGUI.indentLevel -= 1;
                         GUILayout.Space(4);
                         scrollContentY += 4;
@@ -479,9 +384,9 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             }, new Rect(0, 0, position.width, position.height));
         }
 
-        private void ReloadSelectorList(RuntimeAnimatorController controller, string controllerPath)
+        private void ReloadSelectorList(Animator animator, string controllerPath)
         {
-            if (controller == null)
+            if (animator == null || animator.runtimeAnimatorController == null)
                 return;
 
             if (AnimationWindowHelper.TryGetAnimationWindowState(out var activeRoot, out _))
@@ -494,13 +399,12 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 _lastActiveRoot = Selection.activeGameObject;
             }
 
-            _clipListCacheInvalidated = true;
-            EnsureClipListCache(controller, Settings.ShowBlendTreeNested);
+            _clips = GetAllAnimationClips(animator.runtimeAnimatorController);
             _pathConflictCache.Clear();
             _pathConflictCacheControllerPath = controllerPath;
             _pathConflictCachePending = false;
             _pathConflictCacheInvalidated = false;
-            _pathConflictCache = BuildPathConflictCache(controller);
+            _pathConflictCache = BuildPathConflictCache(animator.runtimeAnimatorController);
             Repaint();
         }
 
@@ -539,9 +443,9 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         {
             if (clip == null || root == null) return;
 
-            var controller = ResolveControllerForClip(root, clip);
-            var controllerClips = controller != null
-                ? GetAllAnimationClips(controller)
+            var animator = GetAnimatorFromRoot(root);
+            var controllerClips = animator?.runtimeAnimatorController != null
+                ? GetAllAnimationClips(animator.runtimeAnimatorController)
                 : new List<AnimationClip> { clip };
             ClipMissingBindingDetailsWindow.Open(clip, root, controllerClips);
         }
@@ -604,6 +508,228 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             }
 
             return new List<AnimationClip>(clips);
+        }
+
+        /// <summary>指定コントローラーの全クリップについて競合キャッシュを構築する。無効化・Undo後の再計算や詳細ウィンドウの更新に利用。</summary>
+        internal static Dictionary<int, (bool hasConflict, int pathCount, ConflictEntry[] conflictEntries)> BuildPathConflictCache(RuntimeAnimatorController controller)
+        {
+            var cache = new Dictionary<int, (bool, int, ConflictEntry[])>();
+            if (controller == null) return cache;
+            var capturedClips = GetAllAnimationClips(controller);
+            try
+            {
+                AnimatorController baseController = null;
+                Dictionary<AnimationClip, AnimationClip> overrideMap = null;
+
+                if (controller is AnimatorOverrideController overrideController)
+                {
+                    baseController = overrideController.runtimeAnimatorController as AnimatorController;
+                    if (baseController != null)
+                    {
+                        overrideMap = new Dictionary<AnimationClip, AnimationClip>();
+                        var overrides = new List<KeyValuePair<AnimationClip, AnimationClip>>(overrideController.overridesCount);
+                        overrideController.GetOverrides(overrides);
+                        foreach (var kv in overrides)
+                        {
+                            if (kv.Value != null)
+                                overrideMap[kv.Key] = kv.Value;
+                        }
+                    }
+                }
+                else if (controller is AnimatorController animController)
+                {
+                    baseController = animController;
+                }
+
+                if (baseController == null) return cache;
+
+                var controllerAssetPath = AssetDatabase.GetAssetPath(baseController);
+                var selectorSettings = AssetDatabase.LoadAssetAtPath<AnimationClipSelectorSettings>(SettingsAssetPath);
+
+                var clipBindingKeyMap = new Dictionary<AnimationClip, HashSet<string>>();
+                foreach (var c in capturedClips)
+                {
+                    if (c == null) continue;
+                    var keys = new HashSet<string>();
+                    foreach (var b in AnimationUtility.GetCurveBindings(c))
+                    {
+                        var typeName = b.type != null ? b.type.Name : "Unknown";
+                        keys.Add($"{b.path}|{b.propertyName}|{typeName}");
+                    }
+                    foreach (var b in AnimationUtility.GetObjectReferenceCurveBindings(c))
+                    {
+                        var typeName = b.type != null ? b.type.Name : "Unknown";
+                        keys.Add($"{b.path}|{b.propertyName}|{typeName}");
+                    }
+                    clipBindingKeyMap[c] = keys;
+                }
+
+                var bindingKeyUsage = new Dictionary<string, Dictionary<int, HashSet<AnimationClip>>>();
+                AnimationClip ResolveClip(AnimationClip baseClip)
+                {
+                    if (baseClip == null) return null;
+                    if (overrideMap != null && overrideMap.TryGetValue(baseClip, out var ov))
+                        return ov;
+                    return baseClip;
+                }
+
+                for (int i = 0; i < baseController.layers.Length; i++)
+                {
+                    CollectPathLayerUsage(baseController.layers[i].stateMachine, i, ResolveClip, clipBindingKeyMap, bindingKeyUsage);
+                }
+
+                foreach (var kv in clipBindingKeyMap)
+                {
+                    var clip = kv.Key;
+                    var keys = kv.Value;
+                    var conflictCount = 0;
+                    var conflictPathList = new List<ConflictEntry>();
+
+                    foreach (var key in keys)
+                    {
+                        if (string.IsNullOrEmpty(key)) continue;
+                        if (!bindingKeyUsage.TryGetValue(key, out var perLayer) || perLayer == null)
+                            continue;
+
+                        var selfLayers = new HashSet<int>();
+                        foreach (var kvLayer in perLayer)
+                        {
+                            if (kvLayer.Value != null && kvLayer.Value.Contains(clip))
+                                selfLayers.Add(kvLayer.Key);
+                        }
+
+                        var otherLayerEntries = perLayer
+                            .Where(p => !selfLayers.Contains(p.Key) && p.Value != null && p.Value.Count > 0)
+                            .ToList();
+                        if (otherLayerEntries.Count == 0) continue;
+
+                        var parts = key.Split('|');
+                        var path = parts.Length > 0 ? parts[0] : "";
+                        var property = parts.Length > 1 ? parts[1] : "";
+                        var typeName = parts.Length > 2 ? parts[2] : "";
+                        if (selectorSettings != null && selectorSettings.IsIgnoredConflict(controllerAssetPath, path, property, typeName))
+                            continue;
+
+                        conflictCount++;
+                        var lastObjectName = string.IsNullOrEmpty(path) ? "" : path.Split('/').LastOrDefault() ?? path;
+
+                        var entry = new ConflictEntry
+                        {
+                            Path = path,
+                            LastObjectName = lastObjectName,
+                            PropertyName = property,
+                            TypeName = typeName
+                        };
+                        foreach (var layerIndex in selfLayers)
+                        {
+                            if (!perLayer.TryGetValue(layerIndex, out var selfClipsInLayer) || selfClipsInLayer == null || selfClipsInLayer.Count == 0)
+                                continue;
+                            var selfLayerName = (layerIndex >= 0 && layerIndex < baseController.layers.Length)
+                                ? baseController.layers[layerIndex].name
+                                : $"Layer {layerIndex}";
+                            entry.SelfTargets.Add(new ConflictTargetInfo
+                            {
+                                LayerName = selfLayerName,
+                                Clips = selfClipsInLayer.Where(c => c != null).ToList()
+                            });
+                        }
+                        foreach (var kvLayer in otherLayerEntries)
+                        {
+                            var layerIndex = kvLayer.Key;
+                            var clipsInLayer = kvLayer.Value;
+                            var layerName = (layerIndex >= 0 && layerIndex < baseController.layers.Length)
+                                ? baseController.layers[layerIndex].name
+                                : $"Layer {layerIndex}";
+                            entry.Targets.Add(new ConflictTargetInfo
+                            {
+                                LayerName = layerName,
+                                Clips = clipsInLayer?.Where(c => c != null).ToList() ?? new List<AnimationClip>()
+                            });
+                        }
+                        conflictPathList.Add(entry);
+                    }
+
+                    cache[clip.GetInstanceID()] = (conflictCount > 0, conflictCount, conflictPathList.ToArray());
+                }
+            }
+            catch { /* 例外時は空キャッシュのまま */ }
+
+            return cache;
+        }
+
+        /// <summary>キャッシュを無効化し、次回描画時に再計算させる。コンフリクト解消ボタン押下時などに呼ぶ。</summary>
+        internal static void InvalidatePathConflictCache()
+        {
+            _pathConflictCacheInvalidated = true;
+            var w = GetWindow<AnimationClipSelector>(false);
+            if (w != null) w.Repaint();
+        }
+
+        /// <summary>
+        /// 指定ルートの Controller について、パス＋属性の競合警告を出さないようにする。
+        /// 同じ Controller 上のほかの Clip でも、そのパス＋属性は警告対象外になる。
+        /// </summary>
+        internal static bool IgnoreConflict(GameObject root, string path, string propertyName, string typeName)
+        {
+            var animator = GetAnimatorFromRoot(root);
+            var controllerPath = GetControllerPath(animator != null ? animator.runtimeAnimatorController : null);
+            if (string.IsNullOrEmpty(controllerPath)) return false;
+
+            var settings = LoadOrCreateSettings();
+            if (settings == null) return false;
+            if (settings.IsIgnoredConflict(controllerPath, path, propertyName, typeName))
+                return false;
+
+            Undo.RecordObject(settings, "このコンフリクトを無視");
+            if (!settings.IgnoreConflict(controllerPath, path, propertyName, typeName))
+                return false;
+
+            AnimationClipSelectorStateManager.SetSettingsInstance(settings);
+            AnimationClipSelectorStateManager.RequestSave();
+            InvalidatePathConflictCache();
+            return true;
+        }
+
+        /// <summary>開いている競合詳細ウィンドウの一覧を、現在の無視設定で作り直す。</summary>
+        internal static void RefreshOpenConflictDetailsWindows()
+        {
+            var windows = Resources.FindObjectsOfTypeAll<ClipConflictDetailsWindow>();
+            for (int i = 0; i < windows.Length; i++)
+            {
+                if (windows[i] == null) continue;
+                windows[i].RefreshConflictEntriesFromOutside();
+            }
+        }
+
+        /// <summary>Selector の表示を更新する。Missing バインディング操作後などに呼ぶ。</summary>
+        internal static void InvalidateAndRepaint()
+        {
+            InvalidatePathConflictCache();
+            RefreshOpenConflictDetailsWindows();
+            RefreshOpenMissingBindingWindows();
+        }
+
+        /// <summary>開いている Missing 詳細ウィンドウの一覧を、現在のバインドパスで作り直す。</summary>
+        internal static void RefreshOpenMissingBindingWindows()
+        {
+            var windows = Resources.FindObjectsOfTypeAll<ClipMissingBindingDetailsWindow>();
+            for (int i = 0; i < windows.Length; i++)
+            {
+                if (windows[i] == null) continue;
+                windows[i].RefreshMissingPathsFromOutside();
+            }
+        }
+
+        /// <summary>指定クリップの競合エントリ一覧を取得。root から Controller を解決してキャッシュを構築する。Undo 後の詳細ウィンドウ更新用。</summary>
+        internal static ConflictEntry[] GetConflictEntriesForClip(AnimationClip clip, GameObject root)
+        {
+            if (clip == null || root == null) return Array.Empty<ConflictEntry>();
+            var animator = root.GetComponentInParent<Animator>();
+            if (animator == null) animator = root.GetComponentInChildren<Animator>();
+            var controller = animator?.runtimeAnimatorController;
+            if (controller == null) return Array.Empty<ConflictEntry>();
+            var cache = BuildPathConflictCache(controller);
+            return cache.TryGetValue(clip.GetInstanceID(), out var v) ? v.conflictEntries : Array.Empty<ConflictEntry>();
         }
 
         /// <summary>
@@ -915,7 +1041,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             return false;
         }
 
-        private static void DrawClipGroup(ClipGroup group, string controllerPath, string pathPrefix, GameObject activeRoot, Animator animator, RuntimeAnimatorController controller, AnimationClip activeClip, AnimationClipSelectorSettings settings, float itemSpacing, Dictionary<string, bool> foldoutState, string searchFilter, bool openAnimationWindowOnClipSelect, System.Func<AnimationClip, (bool hasConflict, int pathCount, ConflictEntry[] conflictEntries)?> getPathConflict, ref float scrollContentY)
+        private static void DrawClipGroup(ClipGroup group, string controllerPath, string pathPrefix, GameObject activeRoot, Animator animator, AnimationClip activeClip, AnimationClipSelectorSettings settings, float itemSpacing, Dictionary<string, bool> foldoutState, string searchFilter, bool openAnimationWindowOnClipSelect, System.Func<AnimationClip, (bool hasConflict, int pathCount, ConflictEntry[] conflictEntries)?> getPathConflict, ref float scrollContentY)
         {
             var animatorScopePath = string.IsNullOrEmpty(group.AnimatorScopePath) ? pathPrefix : group.AnimatorScopePath;
             var hasSubGroups = group.Children.Count > 0;
@@ -955,7 +1081,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                         EditorGUI.indentLevel += 2;
                         GUILayout.Space(2);
                         scrollContentY += 2;
-                        DrawClipGroup(child, controllerPath, childPath, activeRoot, animator, controller, activeClip, settings, itemSpacing, foldoutState, searchFilter, openAnimationWindowOnClipSelect, getPathConflict, ref scrollContentY);
+                        DrawClipGroup(child, controllerPath, childPath, activeRoot, animator, activeClip, settings, itemSpacing, foldoutState, searchFilter, openAnimationWindowOnClipSelect, getPathConflict, ref scrollContentY);
                         EditorGUI.indentLevel -= 2;
                         GUILayout.Space(4);
                         scrollContentY += 4;
@@ -1069,11 +1195,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                     if (animatorContent == null) animatorContent = new GUIContent("A", "Animatorでの使用箇所を選択");
                     else animatorContent.tooltip = "Animatorでの使用箇所を選択";
                     if (GUI.Button(animatorRect, animatorContent))
-                    {
-                        // Auto Live Link は Animator.runtimeAnimatorController しか表示しないため、Playable Layer の Controller はアセット選択で開く
-                        var usageRoot = controller == animator.runtimeAnimatorController ? animator.gameObject : null;
-                        SelectUsageInAnimator(usageRoot, controller, clip, animatorScopePath);
-                    }
+                        SelectUsageInAnimator(animator.gameObject, animator.runtimeAnimatorController, clip, animatorScopePath);
 
                     if (GUI.Button(zoomRect, EditorGUIUtility.IconContent("AnimationClip Icon")))
                     {
@@ -1174,6 +1296,577 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                     CollectClipsFromMotion(child.motion, clips, resolveClip);
                 }
             }
+        }
+
+        /// <summary>
+        /// ステートマシン全体を走査し、「Transformパス＋属性キー」ごとに
+        /// どのレイヤーのどのクリップがそのキーを制御しているかを収集する。
+        /// </summary>
+        private static void CollectPathLayerUsage(
+            AnimatorStateMachine sm,
+            int layerIndex,
+            System.Func<AnimationClip, AnimationClip> resolveClip,
+            Dictionary<AnimationClip, HashSet<string>> clipBindingKeyMap,
+            Dictionary<string, Dictionary<int, HashSet<AnimationClip>>> bindingKeyUsage)
+        {
+            if (sm == null) return;
+
+            foreach (var child in sm.states)
+            {
+                if (child.state?.motion == null) continue;
+
+                var clips = new HashSet<AnimationClip>();
+                CollectClipsFromMotion(child.state.motion, clips, resolveClip);
+
+                foreach (var clip in clips)
+                {
+                    if (clip == null) continue;
+                    if (!clipBindingKeyMap.TryGetValue(clip, out var keys) || keys == null) continue;
+
+                    foreach (var key in keys)
+                    {
+                        if (string.IsNullOrEmpty(key)) continue;
+
+                        if (!bindingKeyUsage.TryGetValue(key, out var perLayer))
+                        {
+                            perLayer = new Dictionary<int, HashSet<AnimationClip>>();
+                            bindingKeyUsage[key] = perLayer;
+                        }
+
+                        if (!perLayer.TryGetValue(layerIndex, out var clipsInLayer))
+                        {
+                            clipsInLayer = new HashSet<AnimationClip>();
+                            perLayer[layerIndex] = clipsInLayer;
+                        }
+
+                        clipsInLayer.Add(clip);
+                    }
+                }
+            }
+
+            foreach (var child in sm.stateMachines)
+            {
+                if (child.stateMachine == null) continue;
+                CollectPathLayerUsage(child.stateMachine, layerIndex, resolveClip, clipBindingKeyMap, bindingKeyUsage);
+            }
+        }
+
+        #endregion
+
+        #region Animator ウィンドウ連携
+
+        /// <summary>
+        /// クリップを使用しているAnimatorStateを検索し、Animatorウィンドウで選択する。
+        /// pathPrefix指定時: そのサブステート内のみで検索（例: "Base Layer|Locomotion" なら Locomotion 内のみ）。
+        /// Auto Live Link 方式: GameObject を選択して Animator ウィンドウを同期させてからステートを選択。
+        /// </summary>
+        private static void SelectUsageInAnimator(GameObject animatorRoot, RuntimeAnimatorController controller, AnimationClip clip, string pathPrefix = null)
+        {
+            if (controller == null || clip == null) return;
+
+            var statesInScope = FindAllStatesUsingClipInScope(controller, clip, pathPrefix);
+            if (statesInScope == null || statesInScope.Count == 0)
+            {
+                Debug.LogWarning($"[AnimationClipSelector] クリップ「{clip.name}」を使用しているAnimatorStateが見つかりませんでした。");
+                return;
+            }
+
+            var baseController = controller is AnimatorOverrideController ov
+                ? ov.runtimeAnimatorController as AnimatorController
+                : controller as AnimatorController;
+            if (baseController == null) return;
+
+            var first = statesInScope[0];
+            var capturedRoot = animatorRoot != null ? animatorRoot : FindGameObjectWithController(controller);
+            var capturedController = baseController;
+            var capturedLayerIndex = first.layerIndex;
+            var capturedState = first.state;
+            var capturedStateMachine = first.stateMachine;
+            var capturedPath = first.stateMachinePath;
+            var capturedStates = statesInScope.Select(x => x.state).ToArray();
+
+            if (capturedRoot != null)
+                Selection.activeGameObject = capturedRoot;
+            else
+                Selection.activeObject = baseController;
+
+            EditorApplication.ExecuteMenuItem("Window/Animation/Animator");
+
+            EditorApplication.delayCall += () =>
+            {
+                EditorApplication.delayCall += () =>
+                {
+                    if (capturedRoot != null)
+                        Selection.activeGameObject = capturedRoot;
+                    else
+                        Selection.activeObject = capturedController;
+
+                    var context = capturedRoot != null ? (UnityEngine.Object)capturedRoot : capturedController;
+                    if (capturedStates.Length == 1)
+                    {
+                        Selection.SetActiveObjectWithContext(capturedStates[0], context);
+                    }
+                    else
+                    {
+                        Selection.objects = capturedStates;
+                    }
+                    EditorGUIUtility.PingObject(capturedStates[0]);
+
+                    var windowType = GetAnimatorControllerWindowType();
+                    var animatorWindow = windowType != null ? GetAnimatorControllerWindow(windowType) : null;
+                    if (animatorWindow != null)
+                    {
+                        EditorWindow.FocusWindowIfItsOpen(windowType);
+                        SetAnimatorWindowState(animatorWindow, capturedController, capturedLayerIndex, capturedState, capturedStateMachine, capturedPath);
+                        animatorWindow.Repaint();
+                    }
+                };
+            };
+        }
+
+        private static System.Type GetAnimatorControllerWindowType()
+        {
+            var names = new[] { "UnityEditor.AnimatorControllerWindow", "UnityEditor.AnimatorWindow", "AnimatorControllerWindow", "AnimatorWindow" };
+            foreach (var name in names)
+            {
+                var t = typeof(EditorWindow).Assembly.GetType(name);
+                if (t != null) return t;
+            }
+            foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                foreach (var name in names)
+                {
+                    var t = asm.GetType(name);
+                    if (t != null && typeof(EditorWindow).IsAssignableFrom(t)) return t;
+                }
+            }
+            // EditorWindow を継承し "Animator" を含む型を検索（AnimationWindow は除外）
+            var editorWindowType = typeof(EditorWindow);
+            System.Type fallback = null;
+            foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    foreach (var t in asm.GetTypes())
+                    {
+                        if (t == editorWindowType || !editorWindowType.IsAssignableFrom(t)) continue;
+                        if (t.Name.IndexOf("Animation", System.StringComparison.OrdinalIgnoreCase) >= 0 && t.Name.IndexOf("Animator", System.StringComparison.OrdinalIgnoreCase) < 0)
+                            continue; // AnimationWindow を除外
+                        if (t.Name.IndexOf("Animator", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            if (t.Name.IndexOf("Controller", System.StringComparison.OrdinalIgnoreCase) >= 0) return t;
+                            fallback = fallback ?? t;
+                        }
+                    }
+                }
+                catch { /* 読み込み不可アセンブリをスキップ */ }
+            }
+            return fallback;
+        }
+
+        private static EditorWindow GetAnimatorControllerWindow(System.Type windowType)
+        {
+            if (windowType == null) return null;
+            var windows = (EditorWindow[])Resources.FindObjectsOfTypeAll(windowType);
+            return windows.Length > 0 ? windows[0] : null;
+        }
+
+        private static void SetAnimatorWindowState(EditorWindow window, AnimatorController controller, int layerIndex, AnimatorState state, AnimatorStateMachine stateMachine, List<AnimatorStateMachine> stateMachinePath)
+        {
+            if (window == null || controller == null) return;
+
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            var t = window.GetType();
+
+            // 1. コントローラーを設定
+            SetFieldOrProperty(t, window, "animatorController", "m_AnimatorController", controller, flags);
+
+            // 2. レイヤーを選択
+            SetFieldOrProperty(t, window, "selectedLayerIndex", null, layerIndex, flags);
+
+            // 3. パンくずリスト（サブステート侵入用）m_BreadCrumbs - List<BreadCrumbElement>
+            if (stateMachinePath != null && stateMachinePath.Count > 0)
+            {
+                var breadCrumbsField = t.GetField("m_BreadCrumbs", flags);
+                if (breadCrumbsField != null && breadCrumbsField.FieldType.IsGenericType)
+                {
+                    var listType = breadCrumbsField.FieldType;
+                    var elemType = listType.GetGenericArguments()[0];
+                    var list = System.Activator.CreateInstance(listType) as System.Collections.IList;
+                    if (list != null)
+                    {
+                        if (elemType == typeof(AnimatorStateMachine))
+                        {
+                            foreach (var sm in stateMachinePath) list.Add(sm);
+                            breadCrumbsField.SetValue(window, list);
+                        }
+                        else if (elemType.Name == "ChildAnimatorStateMachine")
+                        {
+                            foreach (var sm in stateMachinePath)
+                            {
+                                var child = CreateChildAnimatorStateMachine(elemType, sm);
+                                if (child != null) list.Add(child);
+                            }
+                            breadCrumbsField.SetValue(window, list);
+                        }
+                        else if (elemType.Name == "BreadCrumbElement")
+                        {
+                            var added = 0;
+                            foreach (var sm in stateMachinePath)
+                            {
+                                var elem = CreateBreadCrumbElement(elemType, sm);
+                                if (elem != null) { list.Add(elem); added++; }
+                            }
+                            if (added > 0)
+                            {
+                                breadCrumbsField.SetValue(window, list);
+                                InvokeRefreshBreadcrumbs(window.GetType(), window, stateMachine);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. ステート選択は呼び出し元で行う（複数選択対応のため）
+        }
+
+        private static object CreateChildAnimatorStateMachine(System.Type childType, AnimatorStateMachine stateMachine)
+        {
+            if (childType == null || stateMachine == null) return null;
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            var obj = System.Activator.CreateInstance(childType);
+            var smField = childType.GetField("stateMachine", flags) ?? childType.GetField("m_StateMachine", flags);
+            var smProp = childType.GetProperty("stateMachine", flags);
+            if (smField != null) smField.SetValue(obj, stateMachine);
+            else if (smProp != null) smProp.SetValue(obj, stateMachine);
+            return obj;
+        }
+
+        private static void InvokeRefreshBreadcrumbs(System.Type windowType, object window, AnimatorStateMachine stateMachine)
+        {
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            foreach (var name in new[] { "RefreshBreadcrumbs", "SyncBreadcrumbs", "OnBreadcrumbsChanged", "RebuildBreadcrumbs", "Refresh" })
+            {
+                var m = windowType.GetMethod(name, flags, null, System.Type.EmptyTypes, null);
+                if (m != null) { try { m.Invoke(window, null); } catch { } break; }
+            }
+            if (stateMachine != null)
+            {
+                var editorProp = windowType.GetProperty("editor", flags);
+                var editor = editorProp?.GetValue(window);
+                if (editor != null)
+                {
+                    var et = editor.GetType();
+                    var smProp = et.GetProperty("stateMachine", flags) ?? et.GetProperty("animatorStateMachine", flags);
+                    if (smProp != null && smProp.CanWrite)
+                    {
+                        try { smProp.SetValue(editor, stateMachine); } catch { }
+                    }
+                    foreach (var name in new[] { "Refresh", "Sync", "OnBreadcrumbsChanged", "Repaint" })
+                    {
+                        var m = et.GetMethod(name, flags, null, System.Type.EmptyTypes, null);
+                        if (m != null) { try { m.Invoke(editor, null); } catch { } break; }
+                    }
+                }
+            }
+        }
+
+        private static object CreateBreadCrumbElement(System.Type elemType, AnimatorStateMachine stateMachine)
+        {
+            if (elemType == null || stateMachine == null) return null;
+            const BindingFlags ctorFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            foreach (var ctor in elemType.GetConstructors(ctorFlags))
+            {
+                var ps = ctor.GetParameters();
+                if (ps.Length == 0) continue;
+                if (!ps[0].ParameterType.IsAssignableFrom(typeof(AnimatorStateMachine))) continue;
+                var args = new object[ps.Length];
+                args[0] = stateMachine;
+                var ok = true;
+                for (int i = 1; i < ps.Length && ok; i++)
+                {
+                    var p = ps[i].ParameterType;
+                    if (!p.IsValueType) { args[i] = null; continue; }
+                    if (p == typeof(int)) { args[i] = 0; continue; }
+                    if (p == typeof(float)) { args[i] = 0f; continue; }
+                    if (p == typeof(bool)) { args[i] = false; continue; }
+                    if (p == typeof(Vector2)) { args[i] = Vector2.zero; continue; }
+                    if (p == typeof(Vector3)) { args[i] = Vector3.zero; continue; }
+                    if (p == typeof(Rect)) { args[i] = default(Rect); continue; }
+                    try { args[i] = System.Activator.CreateInstance(p); }
+                    catch { ok = false; }
+                }
+                if (!ok) continue;
+                try { return ctor.Invoke(args); }
+                catch { }
+            }
+            return null;
+        }
+
+        private static void SetFieldOrProperty(System.Type t, object target, string propName, string fieldName, object value, BindingFlags flags)
+        {
+            var prop = t.GetProperty(propName, flags);
+            var field = (!string.IsNullOrEmpty(fieldName) ? t.GetField(fieldName, flags) : null) ?? t.GetField(propName, flags);
+            if (value == null) return;
+            var valueType = value.GetType();
+            if (prop != null && (prop.PropertyType.IsAssignableFrom(valueType) || (value is int && prop.PropertyType == typeof(int))))
+            {
+                prop.SetValue(target, value);
+                return;
+            }
+            if (field != null && (field.FieldType.IsAssignableFrom(valueType) || (value is int && field.FieldType == typeof(int))))
+                field.SetValue(target, value);
+        }
+
+        #endregion
+
+        #region クリップ・ステート検索
+
+        private struct StateUsageResult
+        {
+            public AnimatorState state;
+            public int layerIndex;
+            public AnimatorStateMachine stateMachine;
+            public List<AnimatorStateMachine> stateMachinePath;
+        }
+
+        /// <summary>pathPrefixで指定したスコープ内でクリップを使用している全ステートを検索。サブステート内の場合はそのサブステート内のみ。</summary>
+        private static List<StateUsageResult> FindAllStatesUsingClipInScope(RuntimeAnimatorController controller, AnimationClip targetClip, string pathPrefix)
+        {
+            var results = new List<StateUsageResult>();
+            AnimatorController baseController = null;
+            Dictionary<AnimationClip, AnimationClip> overrideMap = null;
+
+            if (controller is AnimatorOverrideController overrideController)
+            {
+                baseController = overrideController.runtimeAnimatorController as AnimatorController;
+                if (baseController == null) return results;
+                overrideMap = new Dictionary<AnimationClip, AnimationClip>();
+                var overrides = new List<KeyValuePair<AnimationClip, AnimationClip>>(overrideController.overridesCount);
+                overrideController.GetOverrides(overrides);
+                foreach (var kv in overrides)
+                {
+                    if (kv.Value != null)
+                        overrideMap[kv.Key] = kv.Value;
+                }
+            }
+            else if (controller is AnimatorController animController)
+            {
+                baseController = animController;
+            }
+
+            if (baseController == null) return results;
+
+            var pathParts = string.IsNullOrEmpty(pathPrefix) ? Array.Empty<string>() : pathPrefix.Split('|');
+            var layerName = pathParts.Length > 0 ? pathParts[0] : null;
+
+            for (int i = 0; i < baseController.layers.Length; i++)
+            {
+                var layer = baseController.layers[i];
+                if (!string.IsNullOrEmpty(layerName) && layer.name != layerName)
+                    continue;
+
+                AnimatorStateMachine scopeStateMachine;
+                if (pathParts.Length <= 1)
+                {
+                    scopeStateMachine = layer.stateMachine;
+                }
+                else
+                {
+                    scopeStateMachine = ResolveStateMachineAtPath(layer.stateMachine, pathParts, 1);
+                    if (scopeStateMachine == null) continue;
+                }
+
+                CollectStatesUsingClipInStateMachine(scopeStateMachine, targetClip, overrideMap, i, layer.stateMachine, results);
+            }
+            return results;
+        }
+
+        private static AnimatorStateMachine ResolveStateMachineAtPath(AnimatorStateMachine root, string[] pathParts, int startIndex)
+        {
+            if (root == null || startIndex >= pathParts.Length) return root;
+            var targetName = pathParts[startIndex];
+            foreach (var child in root.stateMachines)
+            {
+                if (child.stateMachine == null) continue;
+                if (child.stateMachine.name != targetName) continue;
+                if (startIndex + 1 >= pathParts.Length)
+                    return child.stateMachine;
+                return ResolveStateMachineAtPath(child.stateMachine, pathParts, startIndex + 1);
+            }
+            return null;
+        }
+
+        private static void CollectStatesUsingClipInStateMachine(AnimatorStateMachine sm, AnimationClip targetClip, Dictionary<AnimationClip, AnimationClip> overrideMap, int layerIndex, AnimatorStateMachine rootStateMachine, List<StateUsageResult> results)
+        {
+            if (sm == null) return;
+
+            foreach (var child in sm.states)
+            {
+                if (child.state == null) continue;
+                var motion = child.state.motion;
+                if (motion == null) continue;
+
+                var effectiveClip = motion is AnimationClip c
+                    ? (overrideMap != null && overrideMap.TryGetValue(c, out var ov) ? ov : c)
+                    : null;
+                if (effectiveClip == targetClip)
+                {
+                    results.Add(new StateUsageResult
+                    {
+                        state = child.state,
+                        layerIndex = layerIndex,
+                        stateMachine = sm,
+                        stateMachinePath = BuildStateMachinePath(rootStateMachine, sm)
+                    });
+                    continue;
+                }
+
+                if (motion is BlendTree blendTree && FindStateUsingClipInBlendTree(blendTree, targetClip, overrideMap))
+                {
+                    results.Add(new StateUsageResult
+                    {
+                        state = child.state,
+                        layerIndex = layerIndex,
+                        stateMachine = sm,
+                        stateMachinePath = BuildStateMachinePath(rootStateMachine, sm)
+                    });
+                }
+            }
+            foreach (var child in sm.stateMachines)
+            {
+                if (child.stateMachine == null) continue;
+                CollectStatesUsingClipInStateMachine(child.stateMachine, targetClip, overrideMap, layerIndex, rootStateMachine, results);
+            }
+        }
+
+        private static bool FindFirstStateUsingClip(RuntimeAnimatorController controller, AnimationClip targetClip, out AnimatorState state, out int layerIndex, out AnimatorStateMachine stateMachine, out List<AnimatorStateMachine> stateMachinePath)
+        {
+            state = null;
+            layerIndex = 0;
+            stateMachine = null;
+            stateMachinePath = null;
+
+            AnimatorController baseController = null;
+            Dictionary<AnimationClip, AnimationClip> overrideMap = null;
+
+            if (controller is AnimatorOverrideController overrideController)
+            {
+                baseController = overrideController.runtimeAnimatorController as AnimatorController;
+                if (baseController == null) return false;
+                overrideMap = new Dictionary<AnimationClip, AnimationClip>();
+                var overrides = new List<KeyValuePair<AnimationClip, AnimationClip>>(overrideController.overridesCount);
+                overrideController.GetOverrides(overrides);
+                foreach (var kv in overrides)
+                {
+                    if (kv.Value != null)
+                        overrideMap[kv.Key] = kv.Value;
+                }
+            }
+            else if (controller is AnimatorController animController)
+            {
+                baseController = animController;
+            }
+
+            if (baseController == null) return false;
+
+            for (int i = 0; i < baseController.layers.Length; i++)
+            {
+                var layer = baseController.layers[i];
+                if (FindStateUsingClipInStateMachine(layer.stateMachine, targetClip, overrideMap, out state, out stateMachine))
+                {
+                    layerIndex = i;
+                    stateMachinePath = BuildStateMachinePath(layer.stateMachine, stateMachine);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>ルートから対象ステートマシンへのパスを構築（サブステート侵入用）</summary>
+        private static List<AnimatorStateMachine> BuildStateMachinePath(AnimatorStateMachine root, AnimatorStateMachine target)
+        {
+            if (root == null || target == null || root == target)
+                return new List<AnimatorStateMachine> { target ?? root };
+
+            var path = new List<AnimatorStateMachine>();
+            if (BuildStateMachinePathRecursive(root, target, path))
+                return path;
+            return new List<AnimatorStateMachine> { target };
+        }
+
+        private static bool BuildStateMachinePathRecursive(AnimatorStateMachine current, AnimatorStateMachine target, List<AnimatorStateMachine> path)
+        {
+            path.Add(current);
+            if (current == target) return true;
+            foreach (var child in current.stateMachines)
+            {
+                if (child.stateMachine == null) continue;
+                if (BuildStateMachinePathRecursive(child.stateMachine, target, path))
+                    return true;
+            }
+            path.RemoveAt(path.Count - 1);
+            return false;
+        }
+
+        private static bool FindStateUsingClipInStateMachine(AnimatorStateMachine sm, AnimationClip targetClip, Dictionary<AnimationClip, AnimationClip> overrideMap, out AnimatorState state, out AnimatorStateMachine foundInStateMachine)
+        {
+            state = null;
+            foundInStateMachine = null;
+            if (sm == null) return false;
+
+            foreach (var child in sm.states)
+            {
+                if (child.state == null) continue;
+                var motion = child.state.motion;
+                if (motion == null) continue;
+
+                var effectiveClip = motion is AnimationClip c
+                    ? (overrideMap != null && overrideMap.TryGetValue(c, out var ov) ? ov : c)
+                    : null;
+                if (effectiveClip == targetClip)
+                {
+                    state = child.state;
+                    foundInStateMachine = sm;
+                    return true;
+                }
+
+                if (motion is BlendTree blendTree)
+                {
+                    if (FindStateUsingClipInBlendTree(blendTree, targetClip, overrideMap))
+                    {
+                        state = child.state;
+                        foundInStateMachine = sm;
+                        return true;
+                    }
+                }
+            }
+            foreach (var child in sm.stateMachines)
+            {
+                if (child.stateMachine == null) continue;
+                if (FindStateUsingClipInStateMachine(child.stateMachine, targetClip, overrideMap, out state, out foundInStateMachine))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool FindStateUsingClipInBlendTree(BlendTree blendTree, AnimationClip targetClip, Dictionary<AnimationClip, AnimationClip> overrideMap)
+        {
+            if (blendTree == null) return false;
+            foreach (var child in blendTree.children)
+            {
+                if (child.motion is AnimationClip c)
+                {
+                    var effective = overrideMap != null && overrideMap.TryGetValue(c, out var ov) ? ov : c;
+                    if (effective == targetClip) return true;
+                }
+                else if (child.motion is BlendTree childTree)
+                {
+                    if (FindStateUsingClipInBlendTree(childTree, targetClip, overrideMap))
+                        return true;
+                }
+            }
+            return false;
         }
 
         #endregion

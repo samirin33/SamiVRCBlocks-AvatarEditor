@@ -122,23 +122,13 @@ namespace SamiVRCBlocksAvatar.Editor
                 }
 
                 CleanupStagedInstaller();
+                EnsureAssetFolder(InstallerFolderAssetPath);
 
-                // .meta は配置先パス由来の固定 GUID で書く。エクスポートごとに GUID が変わると、
-                // 複数商品を導入したとき同じフォルダが別アセット扱いになり asmdef 名・クラスが重複する。
                 var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                 var destFull = Path.GetFullPath(Path.Combine(projectRoot, InstallerFolderAssetPath));
-                Directory.CreateDirectory(destFull);
-                StagedAssetMeta.WriteFolderMeta(destFull, InstallerFolderAssetPath);
-                StagedAssetMeta.CopyTreeWithStableMeta(
-                    sourceFolder,
-                    destFull,
-                    InstallerFolderAssetPath,
-                    ShouldSkipStagedFile,
-                    ShouldSkipStagedDirectory);
+                CopyInstallerTree(sourceFolder, destFull);
 
-                var asmdefFull = Path.Combine(destFull, DistributionAsmdefFileName);
-                File.WriteAllText(asmdefFull, DistributionAsmdefJson);
-                StagedAssetMeta.WriteFileMeta(asmdefFull, InstallerFolderAssetPath + "/" + DistributionAsmdefFileName);
+                File.WriteAllText(Path.Combine(destFull, DistributionAsmdefFileName), DistributionAsmdefJson);
 
                 AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
 
@@ -158,10 +148,25 @@ namespace SamiVRCBlocksAvatar.Editor
             }
         }
 
-        static bool ShouldSkipStagedDirectory(string name)
+        static void CopyInstallerTree(string sourceDir, string destDir)
         {
-            return name.Equals("bin", System.StringComparison.OrdinalIgnoreCase) ||
-                   name.Equals("obj", System.StringComparison.OrdinalIgnoreCase);
+            Directory.CreateDirectory(destDir);
+            foreach (var file in Directory.GetFiles(sourceDir))
+            {
+                var name = Path.GetFileName(file);
+                if (ShouldSkipStagedFile(name))
+                    continue;
+                File.Copy(file, Path.Combine(destDir, name), true);
+            }
+
+            foreach (var dir in Directory.GetDirectories(sourceDir))
+            {
+                var name = Path.GetFileName(dir);
+                if (name.Equals("bin", System.StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("obj", System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+                CopyInstallerTree(dir, Path.Combine(destDir, name));
+            }
         }
 
         static bool ShouldSkipStagedFile(string name)
@@ -206,12 +211,47 @@ namespace SamiVRCBlocksAvatar.Editor
         {
             try
             {
-                if (AssetFolderUtility.DeleteAssetFolder(InstallerFolderAssetPath))
+                if (AssetDatabase.IsValidFolder(InstallerFolderAssetPath))
+                {
+                    AssetDatabase.DeleteAsset(InstallerFolderAssetPath);
                     Debug.Log($"[SamiVRCBlocksAvatar] {InstallerFolderAssetPath} を削除しました。");
+                    return;
+                }
+
+                var fullPath = Path.Combine(Application.dataPath, InstallerFolderName);
+                if (Directory.Exists(fullPath))
+                {
+                    Directory.Delete(fullPath, true);
+                    var metaPath = fullPath + ".meta";
+                    if (File.Exists(metaPath))
+                        File.Delete(metaPath);
+                    AssetDatabase.Refresh();
+                    Debug.Log($"[SamiVRCBlocksAvatar] {InstallerFolderAssetPath} を削除しました。");
+                }
             }
             catch (System.Exception ex)
             {
                 Debug.LogWarning($"[SamiVRCBlocksAvatar] Installer フォルダの削除に失敗しました: {ex.Message}");
+            }
+        }
+
+        static void EnsureAssetFolder(string assetFolderPath)
+        {
+            var normalized = assetFolderPath.Replace("\\", "/").TrimEnd('/');
+            if (AssetDatabase.IsValidFolder(normalized))
+                return;
+
+            var parts = normalized.Split('/');
+            if (parts.Length < 2 || parts[0] != "Assets")
+                return;
+
+            var current = "Assets";
+            for (int i = 1; i < parts.Length; i++)
+            {
+                var next = current + "/" + parts[i];
+                if (!AssetDatabase.IsValidFolder(next))
+                    AssetDatabase.CreateFolder(current, parts[i]);
+                current = next;
             }
         }
     }

@@ -298,19 +298,7 @@ namespace SamiVRCBlocksAvatar.Editor
         }
 
         /// <summary>
-        /// 指定フォルダ内の VN3License.txt のパス。フォルダ未指定なら null。
-        /// </summary>
-        public static string GetLicenseTextPath(string outputFolderPath)
-        {
-            if (string.IsNullOrEmpty(outputFolderPath))
-                return null;
-            var dir = outputFolderPath.Replace("\\", "/").TrimEnd('/');
-            return Path.Combine(dir, LicenseTextFileName).Replace("\\", "/");
-        }
-
-        /// <summary>
-        /// 指定フォルダに VN3License.txt のみを生成する（JSONは生成しない）。既存ファイルは上書きする。
-        /// 書き込みに失敗した場合は null。
+        /// 指定フォルダに VN3License.txt のみを生成する（JSONは生成しない）。
         /// </summary>
         public static string GenerateToFolder(string outputFolderPath, VN3LicenseInfo info)
         {
@@ -320,20 +308,13 @@ namespace SamiVRCBlocksAvatar.Editor
                 return null;
             }
 
-            var textPath = GetLicenseTextPath(outputFolderPath);
-            try
-            {
-                var dir = Path.GetDirectoryName(textPath);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                    Directory.CreateDirectory(dir);
+            var dir = outputFolderPath.Replace("\\", "/").TrimEnd('/');
+            if (!Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
 
-                File.WriteAllText(textPath, BuildLicenseText(info));
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[LicenseGenerator] Failed to write {textPath}: {e.Message}");
-                return null;
-            }
+            var textPath = Path.Combine(dir, LicenseTextFileName).Replace("\\", "/");
+            var text = BuildLicenseText(info);
+            File.WriteAllText(textPath, text);
 
             Debug.Log($"[LicenseGenerator] Generated: {textPath}");
             return textPath;

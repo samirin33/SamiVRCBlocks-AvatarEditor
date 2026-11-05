@@ -211,7 +211,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             else
             {
                 EditorGUILayout.HelpBox(
-                    $"監視中: {watched.name}\n選択中オブジェクトの親 Animator 配下のリネームや親子変更に合わせて、リストの Clip と、そのアバターの Animator・VRCAvatarDescriptor・MA Merge Animator（ルート基準のもの）が使う Clip のバインドパスを書き換えます。ウィンドウを閉じていても動作します（設定はプロジェクトごと）。",
+                    $"監視中: {watched.name}\n選択中オブジェクトの親 Animator 配下のリネームや親子変更に合わせて、リストの Clip に加え、同じ Animator の Clip と古いパスを持つ Clip のバインドパスを書き換えます。ウィンドウを閉じていても動作します。",
                     MessageType.Info);
             }
         }
@@ -219,7 +219,6 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         private void DrawRules()
         {
             EditorGUILayout.LabelField("パス置換", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("置換前のパスと完全一致するパスと、その子孫（置換前のパス/…）だけを置換します。置換先に同じプロパティのキーがある場合は上書きせずスキップします。", MessageType.None);
 
             EditorGUI.BeginChangeCheck();
             _pathFrom = EditorGUILayout.TextField("置換前のパス", _pathFrom);
@@ -334,7 +333,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             RestoreClipList();
             RestoreDirectory();
 
-            var pathToObjectId = ProjectScopedEditorSettings.GetString(PrefsKeyPathToObject, "");
+            var pathToObjectId = EditorPrefs.GetString(PrefsKeyPathToObject, "");
             _pathToObject = LoadTransformFromGlobalObjectId(pathToObjectId);
             if (_pathToObject != null)
                 SyncPathToFromObject();
@@ -351,9 +350,9 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             EditorPrefs.SetInt(PrefsKeySourceMode, (int)_sourceMode);
             EditorPrefs.SetString(PrefsKeyPathFrom, _pathFrom ?? "");
             EditorPrefs.SetString(PrefsKeyPathTo, _pathTo ?? "");
-            ProjectScopedEditorSettings.SetString(PrefsKeyPathToObject, SaveTransformAsGlobalObjectId(_pathToObject));
-            ProjectScopedEditorSettings.SetString(PrefsKeyClipGuids, SerializeClipGuids(_clipList));
-            ProjectScopedEditorSettings.SetString(PrefsKeyDirectoryPath, GetDirectoryPath(_directoryAsset));
+            EditorPrefs.SetString(PrefsKeyPathToObject, SaveTransformAsGlobalObjectId(_pathToObject));
+            EditorPrefs.SetString(PrefsKeyClipGuids, SerializeClipGuids(_clipList));
+            EditorPrefs.SetString(PrefsKeyDirectoryPath, GetDirectoryPath(_directoryAsset));
             PushHierarchyWatch();
         }
 
@@ -365,7 +364,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
         private void RestoreClipList()
         {
             _clipList.Clear();
-            var guids = ProjectScopedEditorSettings.GetString(PrefsKeyClipGuids, "");
+            var guids = EditorPrefs.GetString(PrefsKeyClipGuids, "");
             if (string.IsNullOrEmpty(guids))
                 return;
 
@@ -390,7 +389,7 @@ namespace Samirin33.AvatarEditor.Animation.Editor
             _directoryScanned = false;
             _directoryClips.Clear();
 
-            var folderPath = ProjectScopedEditorSettings.GetString(PrefsKeyDirectoryPath, "");
+            var folderPath = EditorPrefs.GetString(PrefsKeyDirectoryPath, "");
             if (string.IsNullOrEmpty(folderPath))
                 return;
 

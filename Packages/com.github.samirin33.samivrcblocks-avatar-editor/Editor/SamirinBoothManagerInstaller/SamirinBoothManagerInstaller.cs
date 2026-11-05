@@ -369,7 +369,7 @@ public static class SamirinBoothManagerInstaller
 
             EditorUtility.DisplayProgressBar("SamirinBoothManager", "展開中...", 0.45f);
             var extractRoot = Path.Combine(tempRoot, "extract");
-            await ExtractZipInBackgroundAsync(zipPath, extractRoot);
+            ZipFile.ExtractToDirectory(zipPath, extractRoot);
 
             var repoRoot = FindRepoRoot(extractRoot);
             if (string.IsNullOrEmpty(repoRoot))
@@ -408,24 +408,6 @@ public static class SamirinBoothManagerInstaller
             {
                 LogWarning("一時フォルダの削除に失敗: " + e.Message);
             }
-        }
-    }
-
-    /// <summary>
-    /// zip 展開はファイル I/O だけなのでワーカースレッドで行い、エディタを止めない。
-    /// await の続きは UnitySynchronizationContext によりメインスレッドへ戻る（以降の AssetDatabase 操作はメインスレッド）。
-    /// 展開中にドメインリロードが起きると Task ごと失われ、ロックが残るためリロードを止めておく。
-    /// </summary>
-    static async Task ExtractZipInBackgroundAsync(string zipPath, string extractRoot)
-    {
-        EditorApplication.LockReloadAssemblies();
-        try
-        {
-            await Task.Run(() => ZipFile.ExtractToDirectory(zipPath, extractRoot));
-        }
-        finally
-        {
-            EditorApplication.UnlockReloadAssemblies();
         }
     }
 

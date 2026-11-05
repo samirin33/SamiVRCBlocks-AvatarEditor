@@ -17,12 +17,7 @@ namespace SamiVRCBlocksAvatar.Editor
     {
         const string NotoSansJpPath =
             "Packages/com.github.samirin33.samivrcblocks-avatar/Editor/Fonts/NotoSansJP-Medium.ttf";
-        const string BundledJpFontPath =
-            "Packages/com.github.samirin33.samivrcblocks-avatar/Editor/Fonts/LightNovelPOPv2.otf";
         const string LiberationSansSdfResourcesPath = "Fonts & Materials/LiberationSans SDF";
-
-        static Font _jpSourceFont;
-        static bool _jpSourceResolved;
 
         public static bool IsAvailable
         {
@@ -103,38 +98,10 @@ namespace SamiVRCBlocksAvatar.Editor
                 normal = { textColor = Color.white },
                 padding = new RectOffset(12, 12, 8, 8)
             };
-            var font = ResolveJapaneseSourceFont();
+            var font = AssetDatabase.LoadAssetAtPath<Font>(NotoSansJpPath);
             if (font != null)
                 style.font = font;
             GUI.Label(rect, string.IsNullOrEmpty(text) ? " " : text, style);
-        }
-
-        /// <summary>
-        /// NotoSansJP（どこに置かれていても可）→ 同梱フォントの順で探す。毎フレーム検索しないよう結果をキャッシュする。
-        /// </summary>
-        static Font ResolveJapaneseSourceFont()
-        {
-            if (_jpSourceResolved && _jpSourceFont != null)
-                return _jpSourceFont;
-            if (_jpSourceResolved && ReferenceEquals(_jpSourceFont, null))
-                return null;
-            _jpSourceResolved = true;
-
-            var font = AssetDatabase.LoadAssetAtPath<Font>(NotoSansJpPath);
-            if (font == null)
-            {
-                foreach (var guid in AssetDatabase.FindAssets("NotoSansJP t:Font"))
-                {
-                    font = AssetDatabase.LoadAssetAtPath<Font>(AssetDatabase.GUIDToAssetPath(guid));
-                    if (font != null)
-                        break;
-                }
-            }
-            if (font == null)
-                font = AssetDatabase.LoadAssetAtPath<Font>(BundledJpFontPath);
-
-            _jpSourceFont = font;
-            return _jpSourceFont;
         }
 
 #if SAMIVRC_HAS_TMPRO
@@ -207,22 +174,20 @@ namespace SamiVRCBlocksAvatar.Editor
         void ApplyPreviewFonts()
         {
             var noto = GetOrCreateNotoSansJpFont();
-            var host = GetOrCreatePreviewHostFont(noto);
-            if (host == null)
+            if (noto == null)
             {
                 _fontMissing = true;
                 StatusMessage =
-                    "プレビュー用の TMP フォントが見つかりません。NotoSansJP などの日本語フォントを追加するか、TMP Essential Resources をインポートしてください。";
+                    "NotoSansJP-Medium.ttf から TMP フォントを作成できませんでした。Packages/.../Editor/Fonts/NotoSansJP-Medium.ttf を確認してください。";
                 return;
             }
 
+            var host = GetOrCreatePreviewHostFont(noto);
             _tmp.font = host;
             if (host.material != null)
                 _tmp.fontSharedMaterial = host.material;
             _fontMissing = false;
-            StatusMessage = noto == null
-                ? "日本語フォントが見つからないため、日本語が表示されない場合があります。"
-                : "";
+            StatusMessage = "";
         }
 
         static TMP_FontAsset GetOrCreatePreviewHostFont(TMP_FontAsset noto)
@@ -233,10 +198,15 @@ namespace SamiVRCBlocksAvatar.Editor
                 return _previewHostFont;
             }
 
-            var source = LoadDefaultTmpFont();
+            TMP_FontAsset source = null;
+            if (TMP_Settings.defaultFontAsset != null)
+                source = TMP_Settings.defaultFontAsset;
+            if (source == null)
+                source = Resources.Load<TMP_FontAsset>(LiberationSansSdfResourcesPath);
+
             if (source == null)
             {
-                // ホストが取れない場合は日本語フォント単体（mark が前面になる可能性あり）
+                // ホストが取れない場合は Noto 単体（mark が前面になる可能性あり）
                 return noto;
             }
 
@@ -245,24 +215,6 @@ namespace SamiVRCBlocksAvatar.Editor
             _previewHostFont.hideFlags = HideFlags.HideAndDontSave;
             BindNotoFallback(_previewHostFont, noto);
             return _previewHostFont;
-        }
-
-        /// <summary>
-        /// TMP Essential Resources 未インポートだと TMP_Settings.instance が null で例外になるため捕捉する。
-        /// </summary>
-        static TMP_FontAsset LoadDefaultTmpFont()
-        {
-            try
-            {
-                var font = TMP_Settings.defaultFontAsset;
-                if (font != null)
-                    return font;
-            }
-            catch (Exception)
-            {
-            }
-
-            return Resources.Load<TMP_FontAsset>(LiberationSansSdfResourcesPath);
         }
 
         static void BindNotoFallback(TMP_FontAsset host, TMP_FontAsset noto)
@@ -286,7 +238,14 @@ namespace SamiVRCBlocksAvatar.Editor
                 return null;
             _notoResolveAttempted = true;
 
-            var source = ResolveJapaneseSourceFont();
+            var source = AssetDatabase.LoadAssetAtPath<Font>(NotoSansJpPath);
+            if (source == null)
+            {
+                var path = AssetDatabase.GUIDToAssetPath("c85693e86d8321b42a13153ab89db63f");
+                if (!string.IsNullOrEmpty(path))
+                    source = AssetDatabase.LoadAssetAtPath<Font>(path);
+            }
+
             if (source == null)
                 return null;
 
@@ -309,14 +268,14 @@ namespace SamiVRCBlocksAvatar.Editor
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning("[MenuRichText] 日本語 TMP フォント作成に失敗: " + ex.Message);
+                    Debug.LogWarning("[MenuRichText] NotoSansJP TMP フォント作成に失敗: " + ex.Message);
                     return null;
                 }
             }
 
             if (_notoSansJpFont != null)
             {
-                _notoSansJpFont.name = source.name + " (MenuRichText Runtime)";
+                _notoSansJpFont.name = "NotoSansJP-Medium (MenuRichText Runtime)";
                 _notoSansJpFont.hideFlags = HideFlags.HideAndDontSave;
             }
 

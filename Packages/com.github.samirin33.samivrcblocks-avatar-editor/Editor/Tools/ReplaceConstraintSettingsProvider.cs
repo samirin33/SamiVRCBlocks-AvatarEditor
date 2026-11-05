@@ -15,10 +15,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
             return new SettingsProvider(SettingsPath, SettingsScope.User)
             {
                 label = "Replace Constraint",
-                keywords = new HashSet<string>(new[]
-                {
-                    "Replace", "Constraint", "Animator", "Animation", "VRChat", "リバインド", "置換"
-                }),
+                keywords = new HashSet<string>(new[] { "Replace", "Constraint", "Animator", "Animation", "VRChat" }),
                 guiHandler = OnGUI
             };
         }
@@ -30,13 +27,13 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 EditorGUILayout.Space(4);
                 var helpRect = EditorGUILayout.GetControlRect(false, 52);
                 EditorGUI.HelpBox(helpRect,
-                    "Constraint置換時に、親階層のAnimatorに含まれるAnimationClipのバインディングを、置換先のConstraint型へ自動でリバインドするかどうかを設定します。",
+                    "Constraint置換時に、親階層のAnimatorに含まれるAnimationClipのバインディングを自動で置換先にリバインドするかどうかを設定します。",
                     MessageType.Info);
                 EditorGUILayout.Space(4);
 
                 bool autoFix = ReplaceConstraintPreferences.AutoFixAnimatorPath;
                 bool newAutoFix = EditorGUILayout.ToggleLeft(
-                    "Constraint置換時にAnimationClipのバインディングを置換先型へリバインドする",
+                    "Animatorのパスを自動修正する（置換時にAnimationClipのバインディングをリバインド）",
                     autoFix);
                 if (newAutoFix != autoFix)
                     ReplaceConstraintPreferences.AutoFixAnimatorPath = newAutoFix;

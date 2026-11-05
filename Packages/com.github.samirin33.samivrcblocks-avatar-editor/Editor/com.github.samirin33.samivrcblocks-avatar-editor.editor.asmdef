@@ -5,7 +5,9 @@
         "com.github.samirin33.samivrcblocks-avatar-editor.runtime",
         "com.github.samirin33.samirin-vrc-utility.editor",
         "VRC.SDK3.Dynamics.Constraint",
-        "Unity.TextMeshPro"
+        "VRC.Dynamics",
+        "VRC.SDK3.Dynamics.PhysBone",
+        "VRC.SDK3.Dynamics.Contact"
     ],
     "includePlatforms": [
         "Editor"
@@ -13,14 +15,16 @@
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
-    "precompiledReferences": [],
+    "precompiledReferences": [
+        "0Harmony.dll"
+    ],
     "autoReferenced": true,
     "defineConstraints": [],
     "versionDefines": [
         {
-            "name": "com.unity.textmeshpro",
-            "expression": "",
-            "define": "SAMIVRC_HAS_TMPRO"
+            "name": "com.vrchat.base",
+            "expression": "3.10.6",
+            "define": "SAMIVRCBLOCKS_VRCSDK_CONTACT_ADVANCED_PARAMS"
         }
     ],
     "noEngineReferences": false

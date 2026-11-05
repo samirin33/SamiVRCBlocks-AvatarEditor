@@ -27,7 +27,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
         {
             SamirinEditorStyleHelper.DrawWithBlueBackgroundForSettingsGui(() =>
             {
-                var settings = AnimationClipSelectorSettings.instance;
+                var settings = LoadOrCreateSettings();
                 if (settings == null)
                 {
                     EditorGUILayout.HelpBox("設定アセットを読み込めませんでした。", MessageType.Warning);
@@ -52,11 +52,13 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 EditorGUILayout.Space(4);
 
                 so.Update();
-                EditorGUI.BeginChangeCheck();
                 EditorGUILayout.PropertyField(ignoreClipsProp, new GUIContent("競合警告を無視する AnimationClip 一覧"), true);
-                if (EditorGUI.EndChangeCheck() && so.ApplyModifiedProperties())
+                so.ApplyModifiedProperties();
+
+                if (GUI.changed)
                 {
-                    settings.Save();
+                    EditorUtility.SetDirty(settings);
+                    AssetDatabase.SaveAssets();
                     AnimationClipSelector.InvalidatePathConflictCache();
                 }
 
@@ -91,6 +93,7 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                         Undo.RecordObject(settings, "無視したコンフリクトを戻す");
                         if (settings.RemoveIgnoredConflictAt(removeIndex))
                         {
+                            AnimationClipSelectorStateManager.SetSettingsInstance(settings);
                             AnimationClipSelectorStateManager.RequestSave();
                             AnimationClipSelector.InvalidatePathConflictCache();
                             AnimationClipSelector.RefreshOpenConflictDetailsWindows();
@@ -102,6 +105,24 @@ namespace Samirin33.SamirinVRCUtility.AvatarEditor
                 if (GUILayout.Button("Animation Clip Selector を開く", GUILayout.Height(22)))
                     AnimationClipSelector.Open();
             });
+        }
+
+        static AnimationClipSelectorSettings LoadOrCreateSettings()
+        {
+            var path = AnimationClipSelector.SettingsAssetPath;
+            var settings = AssetDatabase.LoadAssetAtPath<AnimationClipSelectorSettings>(path);
+            if (settings != null) return settings;
+
+            var dir = Path.GetDirectoryName(path)?.Replace("\\", "/");
+            if (!string.IsNullOrEmpty(dir) && !AssetDatabase.IsValidFolder("Assets/SamiVRCBlocksAvatar"))
+                AssetDatabase.CreateFolder("Assets", "SamiVRCBlocksAvatar");
+            if (!string.IsNullOrEmpty(dir) && !AssetDatabase.IsValidFolder("Assets/SamiVRCBlocksAvatar/Editor"))
+                AssetDatabase.CreateFolder("Assets/SamiVRCBlocksAvatar", "Editor");
+
+            settings = ScriptableObject.CreateInstance<AnimationClipSelectorSettings>();
+            AssetDatabase.CreateAsset(settings, path);
+            AssetDatabase.SaveAssets();
+            return settings;
         }
 
         static string FormatIgnoredConflict(IgnoredConflictEntry entry)
